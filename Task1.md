@@ -357,3 +357,12 @@ quiero que me digas como puedo lograr esto.
 ### Tener en cuenta
 
 No necesito los datos seed creados en la BD prod y BD dev ya que pienso añadirlos mas tarde, por el momento solo quiero las tablas y que esten vacias.
+
+## Tarea:
+
+- Quiero que me digas como podremos implementar estos cambios
+- Si tienes alguna mejor solucion hazmelo saber
+
+git remote add origin https://github.com/andresToledo-dev/cushqui-backend.git
+git push -u origin main
+git push -u origin dev
