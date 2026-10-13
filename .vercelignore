@@ -3,8 +3,8 @@
 .env.*
 !.env.example
 
-node_modules
-dist
+# Do NOT ignore dist/ or node_modules/: the prebuilt function (api/index.js → dist/serverless.js)
+# needs them, and the CLI already skips node_modules on normal (non-prebuilt) uploads.
 coverage
 test
 *.tsbuildinfo

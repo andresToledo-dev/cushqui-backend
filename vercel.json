@@ -9,7 +9,7 @@
   },
   "functions": {
     "api/index.js": {
-      "includeFiles": "dist/**",
+      "includeFiles": "dist/**/*.js",
       "maxDuration": 30
     }
   },
