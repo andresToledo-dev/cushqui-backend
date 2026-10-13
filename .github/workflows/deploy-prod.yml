@@ -13,7 +13,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  VERCEL_CLI_VERSION: 43.3.0
+  # Vercel rejects old CLIs (deploy needs >= 47.2.2): bump this when it complains
+  VERCEL_CLI_VERSION: 60.1.3
 
 jobs:
   deploy:
