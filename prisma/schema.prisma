@@ -1,0 +1,230 @@
+generator client {
+  provider      = "prisma-client-js"
+  // native: local development · rhel-openssl-3.0.x: Vercel (Linux) runtime
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  // Runtime: Supabase transaction pooler (port 6543, ?pgbouncer=true&connection_limit=1)
+  url       = env("DATABASE_URL")
+  // Migrations: Supabase session pooler (port 5432)
+  directUrl = env("DIRECT_URL")
+}
+
+enum AccountType {
+  BANK
+  CASH
+  CARD
+  WALLET
+  SAVINGS
+  OTHER
+}
+
+enum TransactionType {
+  EXPENSE
+  INCOME
+}
+
+enum MovementType {
+  OPENING
+  ADJUSTMENT
+  TRANSFER
+}
+
+enum TransactionStatus {
+  UNCLASSIFIED
+  CLASSIFIED
+}
+
+enum TransactionSource {
+  MANUAL
+  APPLE_PAY
+  MBWAY
+  REVOLUT
+  BANK
+  OTHER
+}
+
+enum IntegrationType {
+  SHORTCUT
+}
+
+enum FinalDecision {
+  EXPENSE
+  INCOME
+  NA
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  accounts     Account[]
+  categories   Category[]
+  transactions Transaction[]
+  integrations Integration[]
+  importEvents ImportEvent[]
+  movements    AccountMovement[]
+
+  @@map("users")
+}
+
+model Account {
+  id        String      @id @default(uuid())
+  userId    String
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  type      AccountType
+  currency  String      @default("EUR")
+  balance   Decimal     @default(0) @db.Decimal(19, 4)
+  isActive  Boolean     @default(true)
+  icon      String?
+  color     String?
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  transactions      Transaction[]     @relation("TransactionFromAccount")
+  integrations      Integration[]
+  movements         AccountMovement[] @relation("MovementFromAccount")
+  incomingMovements AccountMovement[] @relation("MovementToAccount")
+
+  @@index([userId])
+  @@map("accounts")
+}
+
+model Category {
+  id              String        @id @default(uuid())
+  userId          String?
+  user            User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name            String
+  icon            String?
+  color           String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  parentId        String?
+  parent          Category?     @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children        Category[]    @relation("CategoryHierarchy")
+  transactions    Transaction[] @relation("TransactionCategory")
+  subTransactions Transaction[] @relation("TransactionSubcategory")
+
+  @@index([userId])
+  @@index([parentId])
+  @@map("categories")
+}
+
+model Transaction {
+  id              String            @id @default(uuid())
+  userId          String
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountId       String
+  account         Account           @relation("TransactionFromAccount", fields: [accountId], references: [id], onDelete: Cascade)
+  categoryId      String?
+  category        Category?         @relation("TransactionCategory", fields: [categoryId], references: [id], onDelete: SetNull)
+  subcategoryId   String?
+  subcategory     Category?         @relation("TransactionSubcategory", fields: [subcategoryId], references: [id], onDelete: SetNull)
+  amount          Decimal           @db.Decimal(19, 4)
+  currency        String            @default("EUR")
+  type            TransactionType
+  status          TransactionStatus @default(UNCLASSIFIED)
+  source          TransactionSource @default(MANUAL)
+  merchant        String?
+  description     String?
+  externalId      String?
+  transactionDate DateTime
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  deletedAt       DateTime?
+
+  importEvents ImportEvent[]
+
+  @@index([userId])
+  @@index([accountId])
+  @@index([categoryId])
+  @@index([subcategoryId])
+  @@index([transactionDate])
+  @@index([status])
+  @@index([type])
+  @@index([source])
+  @@index([deletedAt])
+  @@map("transactions")
+}
+
+/// Account-level events that are not INCOME/EXPENSE: openings, manual adjustments and transfers.
+/// One row per event. Only TRANSFER rows are editable.
+model AccountMovement {
+  id            String       @id @default(uuid())
+  userId        String
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type          MovementType
+  /// OPENING/ADJUSTMENT: the account. TRANSFER: source account.
+  accountId     String
+  account       Account      @relation("MovementFromAccount", fields: [accountId], references: [id], onDelete: Cascade)
+  /// TRANSFER only: destination account.
+  toAccountId   String?
+  toAccount     Account?     @relation("MovementToAccount", fields: [toAccountId], references: [id], onDelete: Cascade)
+  /// OPENING/TRANSFER: positive. ADJUSTMENT: signed (+10 / -10).
+  amount        Decimal      @db.Decimal(19, 4)
+  /// ADJUSTMENT only.
+  balanceBefore Decimal?     @db.Decimal(19, 4)
+  /// ADJUSTMENT only.
+  balanceAfter  Decimal?     @db.Decimal(19, 4)
+  currency      String       @default("EUR")
+  note          String?
+  movementDate  DateTime
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([userId])
+  @@index([accountId])
+  @@index([toAccountId])
+  @@index([movementDate])
+  @@map("account_movements")
+}
+
+model Integration {
+  id         String          @id @default(uuid())
+  userId     String
+  user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountId  String?
+  account    Account?        @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  name       String
+  type       IntegrationType
+  tokenHash  String
+  isActive   Boolean         @default(true)
+  lastUsedAt DateTime?
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  importEvents ImportEvent[]
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@map("integrations")
+}
+
+model ImportEvent {
+  id            String            @id @default(uuid())
+  userId        String
+  user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  integrationId String?
+  integration   Integration?      @relation(fields: [integrationId], references: [id], onDelete: SetNull)
+  source        TransactionSource
+  externalId    String?
+  fingerprint   String            @unique
+  receivedAt    DateTime          @default(now())
+  transactionId String?
+  transaction   Transaction?      @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+  message       String            @db.Text
+  finalDecision FinalDecision
+
+  @@index([userId])
+  @@index([integrationId])
+  @@index([fingerprint])
+  @@index([receivedAt])
+  @@map("import_events")
+}
