@@ -1,0 +1,10 @@
+# Never upload local env files (they point to the dev database)
+.env
+.env.*
+!.env.example
+
+node_modules
+dist
+coverage
+test
+*.tsbuildinfo

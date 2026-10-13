@@ -1,0 +1,146 @@
+# Cushqui Backend - Instrucciones para Agentes
+
+## Comandos Rápidos
+
+```bash
+# Instalar dependencias (ejecuta prisma generate en postinstall)
+npm install
+
+# Base de datos (siempre la BD dev de Supabase, configurada en .env)
+npm run db:migrate:dev   # crea una migración nueva y la aplica a BD dev
+npm run db:deploy:dev    # aplica migraciones pendientes a BD dev
+npm run prisma:seed      # datos de prueba (solo dev, opcional)
+
+# Ejecutar
+npm run start:dev     # desarrollo con hot reload (BD dev)
+npm run build         # build de producción
+
+# Tests
+npm test              # tests unitarios (63 tests, sin BD)
+npm run test:e2e      # tests e2e (BD dev + seed; abortan si apuntan a prod)
+npm run test:cov      # coverage
+
+# Producción (normalmente automático al hacer merge a main)
+npm run deploy:prod   # respaldo manual: tests + migraciones BD prod + deploy Vercel
+```
+
+## Arquitectura
+
+**Stack**: NestJS 10, TypeScript 5, Prisma 5, PostgreSQL 15, JWT auth
+
+**Estructura de Módulos** (`src/`):
+
+```
+auth/           # JWT auth (register, login, refresh, me)
+users/          # Perfil de usuario
+accounts/       # Cuentas financieras (BANK, CASH, CARD, WALLET, SAVINGS, OTHER)
+categories/     # Categorías + subcategorías (globales + usuario)
+transactions/   # CRUD + clasificación (UNCLASSIFIED → CLASSIFIED)
+imports/        # Importación Shortcut con deduplicación (fingerprint)
+integrations/   # Tokens de integración (tipo SHORTCUT)
+dashboard/      # Balance, ingresos/gastos mensuales, sin clasificar
+statistics/     # Por categoría, cuenta, mensual (12 meses)
+transfers/      # Crear/editar transferencias entre cuentas (se guardan en account_movements)
+movements/      # Historial de movimientos: aperturas, ajustes, transferencias
+health/         # Health check
+common/         # Guards, decorators, filters
+```
+
+## Memoria para el agente
+
+- Al empezar, lee `MEMORY.md` para conocer el estado del proyecto y las decisiones tomadas
+- Al terminar una tarea, actualizalo: estado actual, decsiones importantes (con su por que) y errores a evitar
+- Mantenlo breve (maximo 50 lineas): resume o elimina lo que no aporte
+- Si algo se converte en una regla permanente, propon moverlo a `AGENTS.md` en lugar de dejarlo en memoria
+- No guardes nunca datos sensibles (claves, tokens, datos personales)
+
+## Decisiones de Diseño Clave
+
+### Autenticación
+
+- **JWT access** (15m) + **refresh token** (7d) vía `Authorization: Bearer <accessToken>`
+- `/api/v1/auth/me` retorna usuario sin `passwordHash`
+- Decorador `@Public()` para rutas sin autenticación
+- Decorador `@CurrentUser()` para contexto de usuario
+
+### Importación Shortcut (Crítico)
+
+- Usa **token separado** (`Authorization: Bearer <SHORTCUT_TOKEN>`), NO JWT
+- Crear integración vía `POST /api/v1/integrations` → retorna `plainToken` **una sola vez**
+- Deduplicación vía **SHA256 fingerprint** en `ImportEvent` (único por user+account+source+amount+merchant+date+externalId)
+- Retorna `{ created: true }` o `{ created: false, duplicate: true, transactionId }`
+
+### Transacciones
+
+- `transactions` contiene **solo INCOME y EXPENSE** (manuales + imports Shortcut). Transferencias, aperturas y ajustes van en `account_movements`
+- `amount` se guarda como **DECIMAL(19,4) positivo**; el signo viene de `type` (EXPENSE = negativo, INCOME = positivo)
+- Clasificación: `POST /transactions/:id/classify` con `{ categoryId }`
+
+### Saldo de cuentas (Crítico)
+
+- `accounts` tiene **un único campo `balance`** (DECIMAL(19,4)); no existen `initialBalance` ni `currentBalance`
+- `balance` es la **fuente de verdad**: no se recalcula desde transacciones (dashboard y statistics lo leen directamente). Es una guía para encontrar discrepancias con el banco real, no el saldo real
+- Toda operación que afecte el saldo **debe** usar `adjustBalance(tx, accountId, delta)` de `src/accounts/account-balance.util.ts`, **dentro del mismo `$transaction`** que escribe la transacción o el movimiento
+  - Transacciones (`balanceDelta(type, amount)`): Crear `+delta(nuevo)` · Borrar `-delta(viejo)` · Editar `-delta(viejo)` en la cuenta vieja y `+delta(nuevo)` en la cuenta nueva
+- Nunca leer-modificar-escribir el saldo: `adjustBalance` usa `increment` atómico de Prisma
+- **`PATCH /accounts/:id` no acepta `balance`**: el saldo solo cambia por transacciones o movimientos, para que todo cambio quede registrado
+
+### Movimientos de cuenta (`account_movements`, Crítico)
+
+- Una fila por evento, tipo `MovementType`: `OPENING`, `ADJUSTMENT`, `TRANSFER`. Se crean con `recordMovement(tx, data)` de `src/movements/movement.util.ts`
+- **OPENING**: al crear la cuenta, **siempre** (incluso con 0 €), `amount = balance` inicial
+- **ADJUSTMENT**: `POST /accounts/:id/adjustments { balance, note? }`. `amount` **con signo** (+10 / -10) = nuevo − actual, más `balanceBefore`/`balanceAfter`. Bloqueo optimista (`updateMany where balance = actual`) → 409 si cambió en paralelo. Delta 0 no registra nada
+- **TRANSFER**: una sola fila (`accountId` = origen, `toAccountId` = destino, `amount` positivo). Nunca dos filas ±
+- **Solo TRANSFER es editable** (`PATCH /transfers/:id`): revertir efecto viejo + aplicar nuevo + actualizar la misma fila, **sin registrar la edición**. OPENING y ADJUSTMENT son inmutables; no hay DELETE de movimientos
+- Historial: `GET /movements?accountId=&type=&from=&to=&page=&limit=`; el filtro `accountId` busca en origen **o** destino
+- Una cuenta con movimientos distintos de OPENING solo se puede desactivar (soft delete), no borrar
+
+## Ambientes y despliegue
+
+Guía paso a paso (Supabase, GitHub, Vercel): `DEPLOY.md`.
+
+| Ambiente | Rama | Corre en | BD | Variables |
+| --- | --- | --- | --- | --- |
+| Local | `dev`, `feature/*` | PC (`npm run start:dev`) | Supabase **dev** | `.env` |
+| Producción | `main` | Vercel | Supabase **prod** | Vercel (runtime) + GitHub Environment `production` (migraciones) |
+
+- Flujo: `feature/*` desde `dev` → PR a `dev` → PR `dev → main` → `.github/workflows/deploy-prod.yml` aplica `prisma migrate deploy` a BD prod y **después** despliega en Vercel. Vercel no despliega solo al hacer push (`vercel.json` → `git.deploymentEnabled: false`)
+- **Nunca** ejecutar `migrate dev`, `migrate reset` ni el seed contra prod. Las migraciones de prod solo con `migrate deploy`
+- Las migraciones (`prisma/migrations/`) **se versionan**: son la única forma de crear las tablas en prod
+- `DATABASE_URL` = pooler de transacciones de Supabase (puerto 6543, `?pgbouncer=true&connection_limit=1`); `DIRECT_URL` = session pooler (puerto 5432), usado por las migraciones
+- **Nunca** escribir contraseñas, tokens ni URLs reales en archivos versionados (este incluido): solo en `.env` / `.env.production` (ignorados), Vercel y GitHub Secrets
+
+Variables (ver `.env.example`): `DATABASE_URL`, `DIRECT_URL`, `JWT_SECRET`, `JWT_REFRESH_SECRET`, `JWT_EXPIRES_IN`, `JWT_REFRESH_EXPIRES_IN`, `PORT`, `NODE_ENV`, `API_PREFIX`, `CORS_ORIGINS`, `PROD_DB_REF` (solo local: project-ref de prod, protege los e2e).
+
+## Particularidades de Testing
+
+| Tipo Test | Comando            | Notas                                               |
+| --------- | ------------------ | --------------------------------------------------- |
+| Unit      | `npm test`         | 63 tests, no requiere BD (los corre la CI en cada PR) |
+| E2E       | `npm run test:e2e` | BD dev con seed; abortan si `DATABASE_URL` contiene `PROD_DB_REF` |
+| Coverage  | `npm run test:cov` | Salida en `coverage/`                               |
+
+**Los tests e2e crean datos reales** y dependen del usuario/cuentas del seed (`npm run prisma:seed` en dev antes de ejecutarlos).
+
+## Problemas Comunes
+
+1. **Supabase gratis pausa proyectos** tras ~1 semana sin uso: reactivar desde el dashboard si la BD no responde
+2. **Token seed se muestra una vez** - `plainToken` de integrations no recuperable después
+3. **Endpoint health** necesita decorador `@Public()` (agregado en health.controller.ts)
+4. **ValidationPipe** global con `whitelist: true`, `forbidNonWhitelisted: true`
+5. **Prisma Decimal** - usar `.toNumber()` para respuestas, `new Decimal(value)` para escrituras
+6. **Sin valores por defecto en DTOs de creación** (`campo?: T = x`) si existe un `UpdateDto extends PartialType(...)`: con `transform: true` el default se hereda y un PATCH sin ese campo lo sobrescribe. Aplicar el default en el servicio (`dto.campo ?? x`)
+7. **Migraciones con renombres** - usar `npx prisma migrate dev --create-only` y editar el SQL a mano (`RENAME COLUMN`); Prisma por defecto hace DROP + ADD y pierde datos
+8. **`prisma generate` falla con EPERM** en Windows si `start:dev` está corriendo (DLL del motor bloqueado): parar el servidor antes
+
+## Credenciales Seed
+
+Después de `npm run prisma:seed`:
+
+- **Email**: `test@cushqui.local`
+- **Password**: `Password123!`
+- Pre-cargados: 3 cuentas, 9 categorías, 4 transacciones
+
+## Base de API
+
+Todos los endpoints bajo `/api/v1/` - Swagger en `http://localhost:3000/docs`
