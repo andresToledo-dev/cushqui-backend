@@ -18,6 +18,8 @@ env:
 
 jobs:
   deploy:
+    # Only ever deploy main (a manual "Run workflow" defaults to the default branch, dev)
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     # Secrets live in the "production" GitHub Environment (Settings → Environments)
     environment: production
