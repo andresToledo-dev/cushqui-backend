@@ -133,8 +133,6 @@ async function annotateWorkbook(source: string, target: string, header: string, 
   }
   await workbook.xlsx.writeFile(target);
 }
-const ENV_FILE = path.join(__dirname, 'import.env');
-const REQUEST_TIMEOUT_MS = 30_000;
 const TOKEN_MAX_AGE_MS = 10 * 60_000; // access token lives 15 min → re-login every 10 min
 
 // Order inside the same day, so balances never go negative needlessly:
@@ -147,27 +145,42 @@ const argValue = (name: string): string | undefined => {
   return i >= 0 ? args[i + 1] : undefined;
 };
 const EXECUTE = args.includes('--execute');
+/** Production: remote API (https), config from scripts/import.prod.env, never creates the user */
+const PROD = args.includes('--prod');
 const RESUME_RUN_ID = argValue('--resume');
+const CMD = PROD
+  ? { simulate: 'npm run import:prod', execute: 'npm run import:prod:execute', resume: 'npm run import:prod:resume' }
+  : { simulate: 'npm run import:transactions', execute: 'npm run import:execute', resume: 'npm run import:resume' };
 if (args.includes('--resume') && (!RESUME_RUN_ID || RESUME_RUN_ID.startsWith('--'))) {
-  console.error('❌ Falta el runId: npm run import:resume <runId>  (es el nombre de la carpeta …_execute en scripts/imports)');
+  console.error(`❌ Falta el runId: ${CMD.resume} <runId>  (es el nombre de la carpeta …_execute en scripts/imports)`);
   process.exit(1);
 }
 
+const ENV_FILE = path.join(__dirname, PROD ? 'import.prod.env' : 'import.env');
+// Vercel cold starts + 30 s function limit: give production requests more room
+const REQUEST_TIMEOUT_MS = PROD ? 45_000 : 30_000;
+
 // A flag that reaches npm instead of the script (missing `--`, or Windows PowerShell 5.1, which strips
 // `--` before calling npm) would silently change the mode. Stop and show commands that always work.
-for (const flag of ['execute', 'resume', 'file', 'mapping']) {
+for (const flag of ['execute', 'resume', 'file', 'mapping', 'prod']) {
   if (process.env[`npm_config_${flag}`] !== undefined && !args.includes(`--${flag}`)) {
     console.error(`❌ "--${flag}" llegó a npm y no al script (falta "--", o PowerShell 5.1 lo eliminó).`);
     console.error('   Comandos que funcionan en cualquier terminal:');
     console.error('     npm run import:transactions             (simulación)');
     console.error('     npm run import:execute                  (importación real)');
     console.error('     npm run import:resume <runId>           (reanudar)');
+    console.error('     npm run import:prod / import:prod:execute / import:prod:resume <runId>   (producción)');
     console.error('     npx ts-node scripts/import-transactions.ts --execute --file <xlsx>   (otras opciones)');
     process.exit(1);
   }
 }
 
-if (fs.existsSync(ENV_FILE)) process.loadEnvFile(ENV_FILE);
+if (fs.existsSync(ENV_FILE)) {
+  process.loadEnvFile(ENV_FILE);
+} else if (PROD) {
+  console.error(`❌ Falta ${ENV_FILE}. Cópialo desde scripts/import.prod.env.example y pon tu email y contraseña de producción.`);
+  process.exit(1);
+}
 
 const config = {
   apiUrl: (process.env.IMPORT_API_URL ?? 'http://localhost:3000/api/v1').replace(/\/+$/, ''),
@@ -177,6 +190,23 @@ const config = {
   sourceFile: argValue('--file') ?? process.env.IMPORT_SOURCE_FILE ?? '',
   mappingFile: argValue('--mapping') ?? path.join(__dirname, 'import-mapping.json'),
 };
+
+/** Local API (dev DB) by default; a remote API only with --prod and https */
+function checkTarget() {
+  let url: URL;
+  try {
+    url = new URL(config.apiUrl);
+  } catch {
+    fail(`IMPORT_API_URL no es una URL válida: "${config.apiUrl}"`);
+  }
+  const local = ['localhost', '127.0.0.1'].includes(url.hostname);
+  if (!PROD && !local) {
+    fail(`IMPORT_API_URL apunta a "${url.hostname}". Sin --prod solo se usa la API local (BD dev). Para producción: npm run import:prod`);
+  }
+  if (PROD && url.protocol !== 'https:') {
+    fail(`En producción IMPORT_API_URL debe ser https (ahora: ${url.protocol}//${url.host}).`);
+  }
+}
 
 // ─── Small helpers ───────────────────────────────────────────────────────────
 
@@ -776,10 +806,34 @@ async function verifyOperation(ctx: Context, op: Operation): Promise<string | un
 async function execute(plan: Plan, mapping: Mapping, sourceFile: string) {
   if (plan.issues.length) fail(`Hay ${plan.issues.length} filas inválidas o sin correspondencia. Corrígelas antes de ejecutar (ver simulación).`);
   if (plan.discrepancies.length) fail(`El saldo final simulado no coincide con el esperado en ${plan.discrepancies.length} cuentas. Corrige el Excel o expectedBalances antes de ejecutar.`);
-  if (!config.email || !config.password) fail('Faltan IMPORT_EMAIL / IMPORT_PASSWORD (scripts/import.env).');
+  if (!config.email || !config.password) fail(`Faltan IMPORT_EMAIL / IMPORT_PASSWORD (${path.relative(ROOT, ENV_FILE)}).`);
+  checkTarget();
 
-  const host = new URL(config.apiUrl).hostname;
-  if (!['localhost', '127.0.0.1'].includes(host)) fail(`IMPORT_API_URL apunta a "${host}". Este script solo se ejecuta contra la API local (BD dev).`);
+  // Preflight BEFORE registering the run: a run that fails here (API down, user missing,
+  // user not empty) must not be recorded, or it would block the real import of this Excel.
+  const api = new Api(config.apiUrl, config.email, config.password);
+  console.log(`\n🔌 ${PROD ? 'PRODUCCIÓN' : 'Local'}: ${config.apiUrl} · usuario ${config.email}`);
+  await api.request('GET', '/health', undefined, { auth: false });
+  let userState: 'created' | 'exists' = 'exists';
+  if (PROD) {
+    // Production never creates users: they register themselves in the app
+    try {
+      await api.login();
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        fail(`El usuario ${config.email} no existe en producción o la contraseña no coincide.\n   Créalo desde la app (registro) con ese email y contraseña y vuelve a ejecutar. El script no crea usuarios en producción.`);
+      }
+      throw error;
+    }
+  } else {
+    userState = await api.register(config.userName);
+    await api.login();
+  }
+  const me = await api.request<{ id: string; email: string }>('GET', '/auth/me');
+  const existingAccounts = await api.request<ApiAccount[]>('GET', '/accounts');
+  if (!RESUME_RUN_ID && existingAccounts.length) {
+    fail(`El usuario ${me.email} ya tiene ${existingAccounts.length} cuentas (${existingAccounts.map((a) => a.name).join(', ')}). Para no duplicar datos solo se importa sobre un usuario vacío.`);
+  }
 
   const fileHash = sha256(sourceFile);
   const registry = readRegistry();
@@ -794,9 +848,9 @@ async function execute(plan: Plan, mapping: Mapping, sourceFile: string) {
   } else {
     if (previous.length) {
       const list = previous.map((e) => `${e.runId} (${e.status})`).join(', ');
-      fail(`Este Excel ya se importó o se intentó importar para ${config.email}: ${list}.\n   Para continuar una ejecución interrumpida usa --resume <runId>. No se vuelve a importar para no duplicar movimientos.`);
+      fail(`Este Excel ya se importó o se intentó importar para ${config.email}: ${list}.\n   Para continuar una ejecución interrumpida usa ${CMD.resume} <runId>. No se vuelve a importar para no duplicar movimientos.`);
     }
-    runId = `import-${nowStamp()}_execute`;
+    runId = `import-${nowStamp()}${PROD ? '_prod' : ''}_execute`;
   }
 
   // .original.xlsx: untouched copy (its hash identifies the import; --resume replays it)
@@ -814,7 +868,6 @@ async function execute(plan: Plan, mapping: Mapping, sourceFile: string) {
   saveRegistryEntry({ runId, sha256: fileHash, apiUrl: config.apiUrl, email: config.email, status: 'running', startedAt: registry.find((e) => e.runId === runId)?.startedAt ?? startedAt });
   log.write({ event: 'run-start', message: RESUME_RUN_ID ? 'resume' : 'new', sourceFile, sha256: fileHash, operations: plan.operations.length });
 
-  const api = new Api(config.apiUrl, config.email, config.password);
   const ctx: Context = { api, accounts: new Map(), categories: new Map(), subcategories: new Map() };
   const successes: { key: string; sheet: string; row: number; kind: Kind; id: string }[] = [];
   const errors: { key?: string; sheet?: string; row?: number; status?: number; message: string }[] = [];
@@ -823,19 +876,9 @@ async function execute(plan: Plan, mapping: Mapping, sourceFile: string) {
 
   try {
     console.log(`\n🚀 Ejecución ${runId} contra ${config.apiUrl}`);
-    await api.request('GET', '/health', undefined, { auth: false });
-
-    // User: created if missing, otherwise reused (only allowed when resuming)
-    const userState = await api.register(config.userName);
-    await api.login();
-    const me = await api.request<{ id: string; email: string }>('GET', '/auth/me');
     log.write({ event: 'setup', message: `usuario ${me.email} (${userState === 'created' ? 'creado' : 'existente'})`, id: me.id });
     console.log(`   Usuario ${me.email}: ${userState === 'created' ? 'creado' : 'ya existía'}`);
-
-    const existingAccounts = await loadAccounts(ctx);
-    if (!RESUME_RUN_ID && existingAccounts.length) {
-      fail(`El usuario ${me.email} ya tiene ${existingAccounts.length} cuentas (${existingAccounts.map((a) => a.name).join(', ')}). Para no duplicar datos solo se importa sobre un usuario vacío.`);
-    }
+    await loadAccounts(ctx);
 
     await ensureCategories(ctx, mapping, plan, me.id, log);
 
@@ -859,6 +902,8 @@ async function execute(plan: Plan, mapping: Mapping, sourceFile: string) {
     if (done.size) console.log(`   ⏭  ${done.size} operaciones ya importadas en esta ejecución se omiten`);
 
     let processed = 0;
+    const pending = plan.operations.filter((op) => !done.has(op.key)).length;
+    const loopStart = Date.now();
     for (const op of plan.operations) {
       if (done.has(op.key)) continue;
       const expected = op.kind === 'ADJUSTMENT' ? plan.balancesBefore.get(op.key)?.[op.account] : undefined;
@@ -874,13 +919,17 @@ async function execute(plan: Plan, mapping: Mapping, sourceFile: string) {
         log.write({ event: apiError?.ambiguous ? 'ambiguous' : 'error', key: op.key, sheet: op.sheet, row: op.row, kind: op.kind, status: apiError?.status, message });
         errors.push({ key: op.key, sheet: op.sheet, row: op.row, status: apiError?.status, message });
         if (apiError?.ambiguous) {
-          fail(`${op.sheet} fila ${op.row}: resultado desconocido (${message}).\n   No se reintenta. Comprueba que la API funciona y reanuda con: --execute --resume ${runId} (verificará si se registró).`, true);
+          fail(`${op.sheet} fila ${op.row}: resultado desconocido (${message}).\n   No se reintenta. Comprueba que la API funciona y reanuda con: ${CMD.resume} ${runId} (verificará si se registró).`, true);
         }
         fail(`${op.sheet} fila ${op.row}: ${message}`, true);
       }
 
       processed++;
-      if (processed % 100 === 0) console.log(`   … ${processed} operaciones enviadas`);
+      if (processed % 100 === 0) {
+        const perOp = (Date.now() - loopStart) / processed;
+        const remainingMin = Math.round((perOp * (pending - processed)) / 60_000);
+        console.log(`   … ${processed}/${pending} enviadas · ${(perOp / 1000).toFixed(1)} s/operación · faltan ~${remainingMin} min`);
+      }
     }
 
     // Final check: API balances must match the simulation
@@ -934,8 +983,8 @@ async function execute(plan: Plan, mapping: Mapping, sourceFile: string) {
       if (entry.event === 'done') results.set(entry.key, `✅ Importada (${entry.id})`);
       else if (entry.event === 'verified') results.set(entry.key, `✅ Importada, verificada al reanudar (${entry.id})`);
       else if (entry.event === 'error') results.set(entry.key, `❌ Error: ${entry.message}`);
-      else if (entry.event === 'ambiguous') results.set(entry.key, `⚠️ Resultado desconocido: reanudar con --resume ${runId}`);
-      else if (entry.event === 'start') results.set(entry.key, `⚠️ En curso al detenerse: reanudar con --resume ${runId}`);
+      else if (entry.event === 'ambiguous') results.set(entry.key, `⚠️ Resultado desconocido: reanudar con ${CMD.resume} ${runId}`);
+      else if (entry.event === 'start') results.set(entry.key, `⚠️ En curso al detenerse: reanudar con ${CMD.resume} ${runId}`);
     }
     try {
       await annotateWorkbook(originalExcel, runExcel, 'Importación', results);
@@ -979,7 +1028,13 @@ async function readOnlyApiCheck(): Promise<Record<string, unknown>> {
     await api.login();
   } catch (error) {
     if (error instanceof ApiError && error.status === 401) {
-      console.log(`   Usuario ${config.email}: no existe (o la contraseña no coincide). La ejecución lo crearía.`);
+      if (PROD) {
+        console.log(`   ❌ Usuario ${config.email}: no existe en producción (o la contraseña no coincide).`);
+        console.log('      Créalo desde la app con ese email y contraseña: el script no crea usuarios en producción.');
+        process.exitCode = 1;
+      } else {
+        console.log(`   Usuario ${config.email}: no existe (o la contraseña no coincide). La ejecución lo crearía.`);
+      }
       return { checked: true, reachable: true, userExists: false };
     }
     throw error;
@@ -1034,7 +1089,7 @@ async function main() {
   if (!fs.existsSync(sourceFile)) fail(`No existe el archivo: ${sourceFile}`);
 
   console.log(`📄 Excel: ${sourceFile}`);
-  console.log(`🧭 Modo: ${EXECUTE ? 'EJECUCIÓN' : 'SIMULACIÓN (no modifica la base de datos; usa --execute para importar)'}`);
+  console.log(`🧭 Modo: ${EXECUTE ? 'EJECUCIÓN' : `SIMULACIÓN (no modifica la base de datos; para importar: ${CMD.execute})`}${PROD ? ' · ⚠️  PRODUCCIÓN' : ''}`);
 
   const { operations, issues } = await readOperations(sourceFile, mapping);
   const plan = buildPlan(operations, issues, mapping);
@@ -1044,10 +1099,11 @@ async function main() {
     const previous = readRegistry().filter((e) => e.sha256 === sha256(sourceFile));
     if (previous.length) console.log(`\n⚠️  Este Excel ya tiene ejecuciones registradas: ${previous.map((e) => `${e.runId} (${e.status}, ${e.email})`).join(', ')}`);
 
+    checkTarget();
     const apiState = await readOnlyApiCheck();
 
     // All files of this simulation in scripts/imports/import-<date_time>_simulation/
-    const runId = `import-${nowStamp()}_simulation`;
+    const runId = `import-${nowStamp()}${PROD ? '_prod' : ''}_simulation`;
     const report = runFile(runId, '.report.json');
     fs.mkdirSync(path.dirname(report), { recursive: true });
 

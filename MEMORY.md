@@ -4,6 +4,7 @@
 - **Tests unitarios**: 65/65 pasando ✅ · e2e no ejecutados tras los últimos cambios (necesitan BD dev con seed)
 - Repo en GitHub (`main` producción en Vercel, `dev` por defecto). Producción desplegada: `https://cushqui-backend.vercel.app`
 - **Importación Excel**: ejecución `import-2026-10-13_21-11-51_execute` detenida en Gastos!1521 (P2028, no guardada) con 1185/2943 importadas. Causa: pooler 6543 (~0,5 s/consulta) + `connection_limit=1` + maxWait 2 s. Arreglado (session pooler local + transactionOptions). Pendiente: `npm run import:resume import-2026-10-13_21-11-51_execute` (no usar `-- --flag`: PowerShell 5.1 quita el `--`) (lo lanza el usuario o con su permiso explícito)
+- **Carga en producción** (rama `feature/import-prod`, sin commit): mismo script con `--prod` contra la API de Vercel; el Excel es la fuente (dev tiene datos de prueba: Revolut Corriente 156,22 ≠ 171,22). Pendiente: el usuario se registra en la app y lanza `npm run import:prod:execute` (~2–3 h por latencia iad1↔eu-west-1)
 - **Rama `feature/category-type`** (sin commit): `type` en categorías + color de subcategoría desde el frontend. Migración `20261014120000_category_type` **sin aplicar** (probada con ROLLBACK sobre la BD dev); hasta aplicarla, la API local da 500 en categorías
 - Script de importación, `openingDate`/`date` y `transactionOptions` en rama `feature/excel-import` (PR a `dev` y luego a `main`)
 
