@@ -1,4 +1,4 @@
-import { IsString, IsEnum, IsOptional, IsNumber, Min, MinLength, MaxLength } from 'class-validator';
+import { IsString, IsEnum, IsOptional, IsNumber, Min, MinLength, MaxLength, IsDateString } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { AccountType } from '@prisma/client';
 
@@ -26,6 +26,11 @@ export class CreateAccountDto {
   @Min(0)
   // No default initializer: PartialType would inherit it and reset the balance on every PATCH
   balance?: number;
+
+  @ApiProperty({ example: '2024-02-27T00:00:00.000Z', required: false, description: 'Date of the OPENING movement (defaults to now). Useful to register historical accounts' })
+  @IsOptional()
+  @IsDateString()
+  openingDate?: string;
 
   @ApiProperty({ example: '🏠', required: false })
   @IsOptional()
