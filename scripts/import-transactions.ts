@@ -51,10 +51,13 @@ interface AccountMapping {
   color?: string;
 }
 
+type CategoryType = 'EXPENSE' | 'INCOME';
+
 interface Mapping {
   currency: string;
   accounts: Record<string, AccountMapping>;
-  categories: Record<string, { icon?: string; color?: string; subcategories?: string[] }>;
+  /** Categories by type: the same name can exist as EXPENSE and as INCOME */
+  categories: Record<CategoryType, Record<string, { icon?: string; color?: string; subcategories?: string[] }>>;
   loans: { category: string };
   /** Real final balance of each account (EUR). The simulation must reproduce it exactly. */
   expectedBalances?: Record<string, number>;
@@ -258,7 +261,7 @@ async function readOperations(file: string, mapping: Mapping): Promise<{ operati
   const operations: Omit<Operation, 'timestamp'>[] = [];
   const issues: Issue[] = [];
   const loanCategory = mapping.loans.category;
-  const loanSubcategories = mapping.categories[loanCategory]?.subcategories ?? [];
+  const loanSubcategories = mapping.categories.EXPENSE[loanCategory]?.subcategories ?? [];
 
   const mapAccount = (sheet: string, row: number, excelName: string): string | undefined => {
     const account = mapping.accounts[excelName];
@@ -289,11 +292,11 @@ async function readOperations(file: string, mapping: Mapping): Promise<{ operati
 
       const account = mapAccount(sheetName, row, cellText(get('Cuenta')));
       const category = cellText(get('Categoría'));
-      if (!mapping.categories[category]) issues.push({ sheet: sheetName, row, message: `categoría sin correspondencia en el mapeo: "${category}"` });
+      if (!mapping.categories[kind]?.[category]) issues.push({ sheet: sheetName, row, message: `categoría de ${kind === 'EXPENSE' ? 'gasto' : 'ingreso'} sin correspondencia en el mapeo: "${category}"` });
 
       const comment = cellText(get('Comentario')) || undefined;
       let subcategory: string | undefined;
-      if (category === loanCategory && comment) {
+      if (kind === 'EXPENSE' && category === loanCategory && comment) {
         const prefix = /^([^:]+):/.exec(comment)?.[1].trim().toLowerCase();
         subcategory = loanSubcategories.find((name) => name.toLowerCase() === prefix);
       }
@@ -568,6 +571,8 @@ interface ApiAccount {
 interface ApiCategory {
   id: string;
   name: string;
+  type: CategoryType;
+  color?: string;
   userId: string | null;
   parentId: string | null;
   subcategories: ApiCategory[];
@@ -624,8 +629,8 @@ class RunLog {
 interface Context {
   api: Api;
   accounts: Map<string, string>; // name → id
-  categories: Map<string, string>; // name → id
-  subcategories: Map<string, string>; // "<category>/<sub>" → id
+  categories: Map<string, string>; // "<type>/<name>" → id
+  subcategories: Map<string, string>; // "<type>/<category>/<sub>" → id
 }
 
 async function loadAccounts(ctx: Context) {
@@ -634,29 +639,46 @@ async function loadAccounts(ctx: Context) {
   return accounts;
 }
 
+/** Lightens a hex color by a percentage (same faded shades the frontend shows for subcategories) */
+function lightenColor(hex: string, percent: number): string {
+  const channel = (i: number) => {
+    const value = parseInt(hex.replace('#', '').substring(i, i + 2), 16);
+    return Math.min(255, Math.round(value + (255 - value) * (percent / 100))).toString(16).padStart(2, '0');
+  };
+  return `#${channel(0)}${channel(2)}${channel(4)}`;
+}
+
 async function ensureCategories(ctx: Context, mapping: Mapping, plan: Plan, userId: string, log: RunLog) {
-  const used = new Set(plan.operations.map((op) => op.category).filter((c): c is string => !!c));
+  const used = new Set(plan.operations.filter((op) => op.category).map((op) => `${op.kind}/${op.category}`));
   const all = await ctx.api.request<ApiCategory[]>('GET', '/categories');
   const own = all.filter((c) => c.userId === userId && !c.parentId);
 
-  for (const [name, def] of Object.entries(mapping.categories)) {
-    let category = own.find((c) => c.name === name);
-    if (!category) {
-      category = await ctx.api.request<ApiCategory>('POST', '/categories', { name, icon: def.icon, color: def.color });
-      category.subcategories = [];
-      log.write({ event: 'setup', message: `categoría creada: ${name}`, id: category.id });
-      console.log(`   + categoría ${name}${used.has(name) ? '' : ' (sin transacciones en el Excel)'}`);
-    }
-    ctx.categories.set(name, category.id);
-
-    for (const sub of def.subcategories ?? []) {
-      let subcategory = category.subcategories.find((s) => s.name === sub);
-      if (!subcategory) {
-        subcategory = await ctx.api.request<ApiCategory>('POST', '/categories/subcategories', { name: sub, parentCategoryId: category.id });
-        log.write({ event: 'setup', message: `subcategoría creada: ${name}/${sub}`, id: subcategory.id });
-        console.log(`   + subcategoría ${name}/${sub}`);
+  for (const type of ['EXPENSE', 'INCOME'] as const) {
+    for (const [name, def] of Object.entries(mapping.categories[type] ?? {})) {
+      const key = `${type}/${name}`;
+      let category = own.find((c) => c.name === name && c.type === type);
+      if (!category) {
+        category = await ctx.api.request<ApiCategory>('POST', '/categories', { name, type, icon: def.icon, color: def.color });
+        category.subcategories = [];
+        log.write({ event: 'setup', message: `categoría creada: ${key}`, id: category.id });
+        console.log(`   + categoría ${key}${used.has(key) ? '' : ' (sin transacciones en el Excel)'}`);
       }
-      ctx.subcategories.set(`${name}/${sub}`, subcategory.id);
+      ctx.categories.set(key, category.id);
+
+      // Subcategory colors: parent lightened 20%, then each one 15% lighter than the previous
+      let previousColor = category.subcategories.at(-1)?.color;
+      for (const sub of def.subcategories ?? []) {
+        let subcategory = category.subcategories.find((s) => s.name === sub);
+        if (!subcategory) {
+          const color = previousColor ? lightenColor(previousColor, 15) : lightenColor(def.color ?? '#95A5A6', 20);
+          previousColor = color;
+          subcategory = await ctx.api.request<ApiCategory>('POST', '/categories/subcategories', { name: sub, parentCategoryId: category.id, color });
+          category.subcategories.push(subcategory);
+          log.write({ event: 'setup', message: `subcategoría creada: ${key}/${sub}`, id: subcategory.id });
+          console.log(`   + subcategoría ${key}/${sub}`);
+        }
+        ctx.subcategories.set(`${key}/${sub}`, subcategory.id);
+      }
     }
   }
 }
@@ -689,8 +711,8 @@ async function sendOperation(ctx: Context, op: Operation, mapping: Mapping, expe
         currency: mapping.currency,
         type: op.kind,
         description: op.comment,
-        categoryId: ctx.categories.get(op.category!) ?? fail(`${op.key}: categoría "${op.category}" no creada`),
-        subcategoryId: op.subcategory ? ctx.subcategories.get(`${op.category}/${op.subcategory}`) : undefined,
+        categoryId: ctx.categories.get(`${op.kind}/${op.category}`) ?? fail(`${op.key}: categoría "${op.kind}/${op.category}" no creada`),
+        subcategoryId: op.subcategory ? ctx.subcategories.get(`${op.kind}/${op.category}/${op.subcategory}`) : undefined,
         transactionDate: op.timestamp,
       });
       return transaction.id;
@@ -963,6 +985,15 @@ async function readOnlyApiCheck(): Promise<Record<string, unknown>> {
     throw error;
   }
 
+  try {
+    return await describeUser(api);
+  } catch (error) {
+    console.log(`   ⚠️  No se pudo consultar el estado del usuario (${(error as Error).message}). La simulación sigue sin esa información.`);
+    return { checked: false, reachable: true, error: (error as Error).message };
+  }
+}
+
+async function describeUser(api: Api): Promise<Record<string, unknown>> {
   const me = await api.request<{ id: string }>('GET', '/auth/me');
   const accounts = await api.request<ApiAccount[]>('GET', '/accounts');
   const categories = (await api.request<ApiCategory[]>('GET', '/categories')).filter((c) => c.userId === me.id);

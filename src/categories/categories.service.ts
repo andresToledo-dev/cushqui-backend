@@ -4,7 +4,19 @@ import { CreateCategoryDto } from "./dto/create-category.dto";
 import { UpdateCategoryDto } from "./dto/update-category.dto";
 import { CreateSubcategoryDto, UpdateSubcategoryDto } from "./dto/subcategory.dto";
 import { CategoryResponseDto } from "./dto/category-response.dto";
-import { getNextSubcategoryColor } from "./utils/color.utils";
+import { TransactionType } from "@prisma/client";
+
+type CategoryRow = {
+  id: string;
+  name: string;
+  type: TransactionType;
+  icon: string | null;
+  color: string | null;
+  userId: string | null;
+  parentId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
 
 @Injectable()
 export class CategoriesService {
@@ -15,6 +27,7 @@ export class CategoriesService {
       data: {
         userId,
         name: dto.name,
+        type: dto.type,
         icon: dto.icon,
         color: dto.color,
       },
@@ -85,14 +98,37 @@ export class CategoriesService {
       throw new ForbiddenException("Cannot modify global categories");
     }
 
-    const updated = await this.prisma.category.update({
-      where: { id },
-      data: {
-        name: dto.name,
-        icon: dto.icon,
-        color: dto.color,
-      },
-      include: { children: true },
+    const typeChanged = dto.type !== undefined && dto.type !== category.type;
+    if (typeChanged) {
+      if (category.parentId) {
+        throw new BadRequestException("A subcategory always has the type of its parent: change the parent category instead");
+      }
+      // Transactions must keep matching their category type
+      const children = await this.prisma.category.findMany({ where: { parentId: id }, select: { id: true } });
+      const ids = [id, ...children.map((c) => c.id)];
+      const used = await this.prisma.transaction.count({
+        where: { deletedAt: null, OR: [{ categoryId: { in: ids } }, { subcategoryId: { in: ids } }] },
+      });
+      if (used > 0) {
+        throw new BadRequestException(`Cannot change the type of a category used by ${used} transactions`);
+      }
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      if (typeChanged) {
+        // Subcategories follow their parent
+        await tx.category.updateMany({ where: { parentId: id }, data: { type: dto.type } });
+      }
+      return tx.category.update({
+        where: { id },
+        data: {
+          name: dto.name,
+          type: dto.type,
+          icon: dto.icon,
+          color: dto.color,
+        },
+        include: { children: true },
+      });
     });
 
     return this.toResponseDto(updated);
@@ -135,7 +171,6 @@ export class CategoriesService {
     // Validate parent category exists
     const parentCategory = await this.prisma.category.findUnique({
       where: { id: dto.parentCategoryId },
-      include: { children: true },
     });
 
     if (!parentCategory) {
@@ -152,19 +187,14 @@ export class CategoriesService {
       throw new ForbiddenException("Access denied to parent category");
     }
 
-    // Get existing subcategories to calculate color
-    const existingSubcategories = parentCategory.children;
-
-    // Calculate color: use parent's icon, lighten parent color or last sibling color
-    const color = getNextSubcategoryColor(parentCategory.color, existingSubcategories);
-
-    // Create subcategory with same icon as parent, calculated color, and parentCategoryId
+    // Same icon and type as the parent; the color comes from the frontend
     const subcategory = await this.prisma.category.create({
       data: {
-        userId: userId, // Same user as parent (null for global)
+        userId: userId,
         name: dto.name,
-        icon: parentCategory.icon, // Inherit parent's icon
-        color,
+        type: parentCategory.type,
+        icon: parentCategory.icon,
+        color: dto.color,
         parentId: dto.parentCategoryId,
       },
     });
@@ -232,20 +262,11 @@ export class CategoriesService {
     );
   }
 
-  private toResponseDto(category: {
-    id: string;
-    name: string;
-    icon: string | null;
-    color: string | null;
-    userId: string | null;
-    parentId: string | null;
-    createdAt: Date;
-    updatedAt: Date;
-    children?: Array<{ id: string; name: string; icon: string | null; color: string | null; userId: string | null; parentId: string | null; createdAt: Date; updatedAt: Date }>;
-  }): CategoryResponseDto {
+  private toResponseDto(category: CategoryRow & { children?: CategoryRow[] }): CategoryResponseDto {
     return new CategoryResponseDto({
       id: category.id,
       name: category.name,
+      type: category.type,
       icon: category.icon ?? undefined,
       color: category.color ?? undefined,
       userId: category.userId,

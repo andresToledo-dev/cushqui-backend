@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, ForbiddenException } from '@nestjs/common';
+import { NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { TransactionsService } from './transactions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
@@ -104,7 +104,7 @@ describe('TransactionsService', () => {
       };
 
       const account = { id: accountId, userId, name: 'Revolut', balance: new Decimal(1000) };
-      const category = { id: categoryId, userId, name: 'Food' };
+      const category = { id: categoryId, userId, name: 'Food', type: TransactionType.EXPENSE, parentId: null };
       const created = {
         id: transactionId,
         userId,
@@ -197,8 +197,93 @@ describe('TransactionsService', () => {
     });
   });
 
+  describe('category type validation', () => {
+    const categories: Record<string, any> = {
+      food: { id: 'food', userId, name: 'Food', type: TransactionType.EXPENSE, parentId: null },
+      salary: { id: 'salary', userId, name: 'Salary', type: TransactionType.INCOME, parentId: null },
+      loans: { id: 'loans', userId, name: 'Loans', type: TransactionType.EXPENSE, parentId: null },
+      jp: { id: 'jp', userId, name: 'JP', type: TransactionType.EXPENSE, parentId: 'loans' },
+    };
+    const baseDto = { accountId, amount: 20, transactionDate: '2026-10-02T12:00:00Z' };
+
+    beforeEach(() => {
+      mockPrisma.account.findUnique.mockResolvedValue({ id: accountId, userId, balance: new Decimal(80) });
+      mockPrisma.category.findUnique.mockImplementation(({ where }: any) => Promise.resolve(categories[where.id] ?? null));
+      mockTx.transaction.create.mockResolvedValue(buildFullTransaction());
+      mockTx.transaction.update.mockResolvedValue(buildFullTransaction());
+    });
+
+    it('should reject an INCOME transaction with an EXPENSE category', async () => {
+      await expect(service.create(userId, { ...baseDto, type: TransactionType.INCOME, categoryId: 'food' })).rejects.toThrow(BadRequestException);
+      expect(mockTx.transaction.create).not.toHaveBeenCalled();
+    });
+
+    it('should accept a subcategory that belongs to the category', async () => {
+      await service.create(userId, { ...baseDto, type: TransactionType.EXPENSE, categoryId: 'loans', subcategoryId: 'jp' });
+
+      expect(mockTx.transaction.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ categoryId: 'loans', subcategoryId: 'jp' }) }),
+      );
+    });
+
+    it('should reject a subcategory of another category', async () => {
+      await expect(
+        service.create(userId, { ...baseDto, type: TransactionType.EXPENSE, categoryId: 'food', subcategoryId: 'jp' }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should turn an EXPENSE of 20 into an INCOME of 20: balance 60 → 100', async () => {
+      // Account had 80, the expense left it at 60
+      mockPrisma.transaction.findUnique.mockResolvedValue({
+        id: transactionId, userId, accountId, categoryId: 'food', subcategoryId: null, status: TransactionStatus.CLASSIFIED,
+        amount: new Decimal(20), type: TransactionType.EXPENSE, deletedAt: null,
+      });
+
+      await service.update(userId, transactionId, { type: TransactionType.INCOME, categoryId: 'salary' });
+
+      // Revert the expense (+20 → 80) and apply the income (+20 → 100)
+      expect(mockTx.account.update).toHaveBeenNthCalledWith(1, { where: { id: accountId }, data: { balance: { increment: new Decimal(20) } } });
+      expect(mockTx.account.update).toHaveBeenNthCalledWith(2, { where: { id: accountId }, data: { balance: { increment: new Decimal(20) } } });
+      expect(mockTx.transaction.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ type: TransactionType.INCOME, categoryId: 'salary' }) }),
+      );
+    });
+
+    it('should reject changing the type while keeping a category of the old type', async () => {
+      mockPrisma.transaction.findUnique.mockResolvedValue({
+        id: transactionId, userId, accountId, categoryId: 'food', subcategoryId: null, status: TransactionStatus.CLASSIFIED,
+        amount: new Decimal(20), type: TransactionType.EXPENSE, deletedAt: null,
+      });
+
+      await expect(service.update(userId, transactionId, { type: TransactionType.INCOME })).rejects.toThrow(BadRequestException);
+      expect(mockTx.account.update).not.toHaveBeenCalled();
+    });
+
+    it('should drop the old subcategory when the category changes without a new one', async () => {
+      mockPrisma.transaction.findUnique.mockResolvedValue({
+        id: transactionId, userId, accountId, categoryId: 'loans', subcategoryId: 'jp', status: TransactionStatus.CLASSIFIED,
+        amount: new Decimal(20), type: TransactionType.EXPENSE, deletedAt: null,
+      });
+
+      await service.update(userId, transactionId, { categoryId: 'food' });
+
+      expect(mockTx.transaction.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ categoryId: 'food', subcategoryId: null }) }),
+      );
+    });
+
+    it('should reject classifying with a category of another type', async () => {
+      mockPrisma.transaction.findUnique.mockResolvedValue({
+        id: transactionId, userId, accountId, categoryId: null, subcategoryId: null, status: TransactionStatus.UNCLASSIFIED,
+        amount: new Decimal(20), type: TransactionType.INCOME, deletedAt: null,
+      });
+
+      await expect(service.classify(userId, transactionId, { categoryId: 'food' })).rejects.toThrow(BadRequestException);
+    });
+  });
+
   describe('update', () => {
-    const existing = { id: transactionId, userId, accountId, categoryId: null, status: TransactionStatus.UNCLASSIFIED, amount: new Decimal(10), type: TransactionType.INCOME, deletedAt: null };
+    const existing ={ id: transactionId, userId, accountId, categoryId: null, status: TransactionStatus.UNCLASSIFIED, amount: new Decimal(10), type: TransactionType.INCOME, deletedAt: null };
 
     it('should revert the old amount and apply the new one', async () => {
       mockPrisma.transaction.findUnique.mockResolvedValue(existing);
