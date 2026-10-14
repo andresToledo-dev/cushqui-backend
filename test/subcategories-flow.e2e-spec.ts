@@ -57,11 +57,12 @@ describe("Subcategories Flow (e2e)", () => {
       expect(ana.parentId).toBe(prestamosCategoryId);
       console.log("✅ Ana subcategory:", ana);
 
-      // Verify color gradient: first subcategory lighter than parent, second lighter than first
-      // Using actual values from implementation: lightenColor('#FF6B35', 20) = #ff895d, lightenColor('#ff895d', 15) = #ff9b75
+      // Colors created by the seed (the API no longer generates subcategory colors)
       expect(juanPablo.color).toBe("#ff895d");
       expect(ana.color).toBe("#ff9b75");
-      console.log("✅ Color gradient verified - Juan Pablo:", juanPablo.color, ", Ana:", ana.color);
+      // Subcategories always have the type of their parent
+      expect(juanPablo.type).toBe("EXPENSE");
+      expect(ana.type).toBe("EXPENSE");
 
       juanPabloSubcategoryId = juanPablo.id;
       anaSubcategoryId = ana.id;
@@ -74,14 +75,15 @@ describe("Subcategories Flow (e2e)", () => {
         .send({
           name: "María",
           parentCategoryId: prestamosCategoryId,
+          color: "#FFB896",
         })
         .expect(201);
 
       expect(res.body.name).toBe("María");
       expect(res.body.icon).toBe("💰");
       expect(res.body.parentId).toBe(prestamosCategoryId);
-      // Third subcategory should be lighter than Ana's color: lightenColor('#ff9b75', 15) = #ffb896
-      expect(res.body.color).toBe("#ffb896");
+      expect(res.body.color).toBe("#FFB896"); // Color chosen by the frontend
+      expect(res.body.type).toBe("EXPENSE"); // Type inherited from "Préstamos"
       console.log("✅ New subcategory created:", res.body);
     });
 
@@ -109,6 +111,7 @@ describe("Subcategories Flow (e2e)", () => {
         .send({
           name: "Nieto",
           parentCategoryId: juanPabloSubcategoryId, // This is a subcategory, not a top-level category
+          color: "#FFFFFF",
         })
         .expect(400);
       console.log("✅ Correctly rejected subcategory under subcategory");
@@ -121,9 +124,28 @@ describe("Subcategories Flow (e2e)", () => {
         .send({
           name: "Test",
           parentCategoryId: "00000000-0000-0000-0000-000000000000",
+          color: "#FFFFFF",
         })
         .expect(404);
       console.log("✅ Correctly rejected non-existent parent");
+    });
+
+    it("should return 400 when the subcategory color is missing or not hex", async () => {
+      for (const color of [undefined, "red", "#FFF"]) {
+        await request(app.getHttpServer())
+          .post("/api/v1/categories/subcategories")
+          .set("Authorization", `Bearer ${accessToken}`)
+          .send({ name: "Sin color", parentCategoryId: prestamosCategoryId, color })
+          .expect(400);
+      }
+    });
+
+    it("should return 400 when a subcategory is sent with its own type", async () => {
+      await request(app.getHttpServer())
+        .post("/api/v1/categories/subcategories")
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send({ name: "Con tipo", parentCategoryId: prestamosCategoryId, color: "#FFFFFF", type: "INCOME" })
+        .expect(400);
     });
 
     it("should return 401 without token", async () => {
