@@ -30,6 +30,11 @@ yarn-error.log*
 # vercel
 .vercel
 
+# data imports: copies of personal financial data, logs and credentials
+scripts/imports/
+scripts/import.env
+scripts/import-mapping.json
+
 # IDE
 .idea
 .vscode
@@ -40,3 +45,6 @@ yarn-error.log*
 Thumbs.db
 .vercel
 .env*
+
+# Personal
+Task1.md

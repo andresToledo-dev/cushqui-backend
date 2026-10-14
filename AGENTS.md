@@ -16,7 +16,7 @@ npm run start:dev     # desarrollo con hot reload (BD dev)
 npm run build         # build de producción
 
 # Tests
-npm test              # tests unitarios (63 tests, sin BD)
+npm test              # tests unitarios (65 tests, sin BD)
 npm run test:e2e      # tests e2e (BD dev + seed; abortan si apuntan a prod)
 npm run test:cov      # coverage
 
@@ -88,7 +88,8 @@ common/         # Guards, decorators, filters
 ### Movimientos de cuenta (`account_movements`, Crítico)
 
 - Una fila por evento, tipo `MovementType`: `OPENING`, `ADJUSTMENT`, `TRANSFER`. Se crean con `recordMovement(tx, data)` de `src/movements/movement.util.ts`
-- **OPENING**: al crear la cuenta, **siempre** (incluso con 0 €), `amount = balance` inicial
+- **OPENING**: al crear la cuenta, **siempre** (incluso con 0 €), `amount = balance` inicial. `openingDate` opcional (por defecto ahora) para cuentas históricas
+- `POST /accounts/:id/adjustments` acepta `date` opcional (por defecto ahora)
 - **ADJUSTMENT**: `POST /accounts/:id/adjustments { balance, note? }`. `amount` **con signo** (+10 / -10) = nuevo − actual, más `balanceBefore`/`balanceAfter`. Bloqueo optimista (`updateMany where balance = actual`) → 409 si cambió en paralelo. Delta 0 no registra nada
 - **TRANSFER**: una sola fila (`accountId` = origen, `toAccountId` = destino, `amount` positivo). Nunca dos filas ±
 - **Solo TRANSFER es editable** (`PATCH /transfers/:id`): revertir efecto viejo + aplicar nuevo + actualizar la misma fila, **sin registrar la edición**. OPENING y ADJUSTMENT son inmutables; no hay DELETE de movimientos
@@ -107,16 +108,26 @@ Guía paso a paso (Supabase, GitHub, Vercel): `DEPLOY.md`.
 - Flujo: `feature/*` desde `dev` → PR a `dev` → PR `dev → main` → `.github/workflows/deploy-prod.yml` aplica `prisma migrate deploy` a BD prod y **después** despliega en Vercel. Vercel no despliega solo al hacer push (`vercel.json` → `git.deploymentEnabled: false`)
 - **Nunca** ejecutar `migrate dev`, `migrate reset` ni el seed contra prod. Las migraciones de prod solo con `migrate deploy`
 - Las migraciones (`prisma/migrations/`) **se versionan**: son la única forma de crear las tablas en prod
-- `DATABASE_URL` = pooler de transacciones de Supabase (puerto 6543, `?pgbouncer=true&connection_limit=1`); `DIRECT_URL` = session pooler (puerto 5432), usado por las migraciones
+- `DATABASE_URL`: **producción (Vercel)** = pooler de transacciones (puerto 6543, `?pgbouncer=true&connection_limit=1`); **local** = session pooler (puerto 5432, `?connection_limit=5`): el 6543 añade ~0,5 s por consulta y con un servidor de larga duración provocó P2028. Nunca dejar el session pooler sin `connection_limit` (Prisma abriría CPUs×2+1 conexiones de las 60 del plan free). `DIRECT_URL` = usado por las migraciones
+- Prisma: `transactionOptions { maxWait: 10s, timeout: 20s }` en `PrismaService` (los 2 s por defecto fallaban con los picos del pooler)
 - **Nunca** escribir contraseñas, tokens ni URLs reales en archivos versionados (este incluido): solo en `.env` / `.env.production` (ignorados), Vercel y GitHub Secrets
 
 Variables (ver `.env.example`): `DATABASE_URL`, `DIRECT_URL`, `JWT_SECRET`, `JWT_REFRESH_SECRET`, `JWT_EXPIRES_IN`, `JWT_REFRESH_EXPIRES_IN`, `PORT`, `NODE_ENV`, `API_PREFIX`, `CORS_ORIGINS`, `PROD_DB_REF` (solo local: project-ref de prod, protege los e2e).
+
+## Importación desde Excel (`scripts/import-transactions.ts`)
+
+- Script puntual que importa vía la API local (nunca BD directa ni prod): `npm run import:transactions` (simulación) / `npm run import:execute` / `npm run import:resume <runId>`. No usar `npm run … -- --flag`: Windows PowerShell 5.1 elimina el `--` y npm se queda el flag (el script lo detecta y se detiene). Otras opciones: `npx ts-node scripts/import-transactions.ts …`
+- Config en `scripts/import.env` y mapeo en `scripts/import-mapping.json`: **ambos ignorados por git** (credenciales, saldos reales y nombres de personas). Se versionan solo `scripts/import.env.example` y `scripts/import-mapping.example.json`
+- `scripts/imports/` contiene datos personales: **ignorado por git, nunca versionar**. Cada ejecución guarda sus archivos en `scripts/imports/import-<fecha_hora local>_simulation/` o `…_execute/`: Excel con columna de resultado ("Simulación" / "Importación"), `.report.json` y, en ejecución, `.log` y `.original.xlsx` (copia intacta usada por `--resume`); `registry.json` en la raíz
+- `expectedBalances` en el mapeo: saldos reales finales; si la simulación no los reproduce exactamente, `--execute` se bloquea
+- La simulación **nunca escribe**: solo login + GET para mostrar el estado del usuario. Probar `--execute` solo con autorización explícita del usuario
+- Protecciones: se niega a ejecutar con filas inválidas, a reimportar el mismo Excel (hash) y a importar sobre un usuario con cuentas; un fallo ambiguo se reanuda con `--resume <runId>`, que verifica en la API antes de reenviar
 
 ## Particularidades de Testing
 
 | Tipo Test | Comando            | Notas                                               |
 | --------- | ------------------ | --------------------------------------------------- |
-| Unit      | `npm test`         | 63 tests, no requiere BD (los corre la CI en cada PR) |
+| Unit      | `npm test`         | 65 tests, no requiere BD (los corre la CI en cada PR) |
 | E2E       | `npm run test:e2e` | BD dev con seed; abortan si `DATABASE_URL` contiene `PROD_DB_REF` |
 | Coverage  | `npm run test:cov` | Salida en `coverage/`                               |
 
