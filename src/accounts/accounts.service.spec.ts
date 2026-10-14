@@ -91,6 +91,19 @@ describe('AccountsService', () => {
       );
     });
 
+    it('should use openingDate as the OPENING movement date', async () => {
+      mockPrisma.account.create.mockResolvedValue(buildAccount({ balance: new Decimal(0) }));
+
+      await service.create(userId, { name: 'Principal', type: AccountType.BANK, openingDate: '2024-02-27T00:00:00.000Z' });
+
+      expect(mockPrisma.accountMovement.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          type: MovementType.OPENING,
+          movementDate: new Date('2024-02-27T00:00:00.000Z'),
+        }),
+      });
+    });
+
     it('should record an OPENING of 0 when no balance is provided', async () => {
       mockPrisma.account.create.mockResolvedValue(buildAccount({ balance: new Decimal(0) }));
 
@@ -193,6 +206,20 @@ describe('AccountsService', () => {
 
       expect(mockPrisma.accountMovement.create).toHaveBeenCalledWith({
         data: expect.objectContaining({ amount: new Decimal(-10) }),
+      });
+    });
+
+    it('should use the given date as the ADJUSTMENT movement date', async () => {
+      mockPrisma.account.findUnique.mockResolvedValue(buildAccount({ balance: new Decimal(300) }));
+      mockPrisma.account.updateMany.mockResolvedValue({ count: 1 });
+
+      await service.adjust(userId, accountId, { balance: 290, date: '2025-01-15T00:00:00.000Z' });
+
+      expect(mockPrisma.accountMovement.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          type: MovementType.ADJUSTMENT,
+          movementDate: new Date('2025-01-15T00:00:00.000Z'),
+        }),
       });
     });
 
