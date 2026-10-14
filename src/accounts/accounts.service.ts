@@ -36,6 +36,7 @@ export class AccountsService {
         accountId: created.id,
         amount: balance,
         currency,
+        movementDate: dto.openingDate ? new Date(dto.openingDate) : undefined,
       });
 
       return created;
@@ -79,6 +80,7 @@ export class AccountsService {
         balanceAfter: newBalance,
         currency: current.currency,
         note: dto.note,
+        movementDate: dto.date ? new Date(dto.date) : undefined,
       });
 
       return { ...current, balance: newBalance };
