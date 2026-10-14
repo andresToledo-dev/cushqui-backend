@@ -26,7 +26,10 @@
     "db:deploy:dev": "prisma migrate deploy",
     "db:reset:dev": "prisma migrate reset --force --skip-seed",
     "db:deploy:prod": "node scripts/deploy-prod.js --migrate-only",
-    "deploy:prod": "node scripts/deploy-prod.js"
+    "deploy:prod": "node scripts/deploy-prod.js",
+    "import:transactions": "ts-node scripts/import-transactions.ts",
+    "import:execute": "ts-node scripts/import-transactions.ts --execute",
+    "import:resume": "ts-node scripts/import-transactions.ts --execute --resume"
   },
   "dependencies": {
     "@nestjs/common": "^10.3.0",
@@ -56,6 +59,7 @@
     "@types/node": "^20.10.6",
     "@types/passport-jwt": "^4.0.0",
     "@types/supertest": "^6.0.2",
+    "exceljs": "4.4.0",
     "jest": "^29.7.0",
     "prisma": "^5.7.0",
     "supertest": "^6.3.3",

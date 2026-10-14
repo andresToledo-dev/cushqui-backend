@@ -1,0 +1,30 @@
+{
+  "$comment": "Copy to scripts/import-mapping.json (git-ignored: it holds real balances and names) and adapt it. Keys are the exact names used in the Excel. Icons and colors are arbitrary.",
+  "currency": "EUR",
+  "accounts": {
+    "Main": { "name": "Main", "type": "BANK", "icon": "🏦", "color": "#1E88E5" },
+    "Savings": { "name": "Savings", "type": "SAVINGS", "icon": "🐷", "color": "#FDD835" },
+    "Crypto": { "name": "Crypto", "type": "WALLET", "icon": "₿", "color": "#F7931A" }
+  },
+  "categories": {
+    "Food": { "icon": "🍔", "color": "#E53935" },
+    "Transport": { "icon": "🚌", "color": "#1E88E5" },
+    "Loans": {
+      "icon": "💰",
+      "color": "#FF6B35",
+      "subcategories": ["Alice", "Bob"]
+    },
+    "Salary": { "icon": "💼", "color": "#1565C0" },
+    "Other": { "icon": "📦", "color": "#95A5A6" }
+  },
+  "expectedBalances": {
+    "$comment": "Real final balance (EUR) of each account. Simulation and execution must match it exactly.",
+    "Main": 1000.0,
+    "Savings": 250.5,
+    "Crypto": 0
+  },
+  "loans": {
+    "$comment": "A loan expense gets a subcategory only when its comment starts with '<Name>:' and <Name> is one of the category subcategories. Otherwise it stays in the category without subcategory.",
+    "category": "Loans"
+  }
+}
