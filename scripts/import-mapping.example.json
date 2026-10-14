@@ -1,25 +1,63 @@
 {
-  "$comment": "Copy to scripts/import-mapping.json (git-ignored: it holds real balances and names) and adapt it. Keys are the exact names used in the Excel. Icons and colors are arbitrary.",
+  "$comment": "Copy to scripts/import-mapping.json (git-ignored: it holds real balances and names) and adapt it. Categories are grouped by type (EXPENSE = sheet Gastos, INCOME = sheet Ingresos); the same name may exist in both. Keys are the exact names used in the Excel. Icons and colors are arbitrary; subcategory colors are derived from the parent color.",
   "currency": "EUR",
   "accounts": {
-    "Main": { "name": "Main", "type": "BANK", "icon": "🏦", "color": "#1E88E5" },
-    "Savings": { "name": "Savings", "type": "SAVINGS", "icon": "🐷", "color": "#FDD835" },
-    "Crypto": { "name": "Crypto", "type": "WALLET", "icon": "₿", "color": "#F7931A" }
+    "Main": {
+      "name": "Main",
+      "type": "BANK",
+      "icon": "🏦",
+      "color": "#1E88E5"
+    },
+    "Savings": {
+      "name": "Savings",
+      "type": "SAVINGS",
+      "icon": "🐷",
+      "color": "#FDD835"
+    },
+    "Crypto": {
+      "name": "Crypto",
+      "type": "WALLET",
+      "icon": "₿",
+      "color": "#F7931A"
+    }
   },
   "categories": {
-    "Food": { "icon": "🍔", "color": "#E53935" },
-    "Transport": { "icon": "🚌", "color": "#1E88E5" },
-    "Loans": {
-      "icon": "💰",
-      "color": "#FF6B35",
-      "subcategories": ["Alice", "Bob"]
+    "EXPENSE": {
+      "Food": {
+        "icon": "🍔",
+        "color": "#E53935"
+      },
+      "Transport": {
+        "icon": "🚌",
+        "color": "#1E88E5"
+      },
+      "Loans": {
+        "icon": "💰",
+        "color": "#FF6B35",
+        "subcategories": [
+          "Alice",
+          "Bob"
+        ]
+      },
+      "Other": {
+        "icon": "📦",
+        "color": "#95A5A6"
+      }
     },
-    "Salary": { "icon": "💼", "color": "#1565C0" },
-    "Other": { "icon": "📦", "color": "#95A5A6" }
+    "INCOME": {
+      "Salary": {
+        "icon": "💼",
+        "color": "#1565C0"
+      },
+      "Other": {
+        "icon": "📦",
+        "color": "#95A5A6"
+      }
+    }
   },
   "expectedBalances": {
     "$comment": "Real final balance (EUR) of each account. Simulation and execution must match it exactly.",
-    "Main": 1000.0,
+    "Main": 1000,
     "Savings": 250.5,
     "Crypto": 0
   },
