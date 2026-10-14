@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { UpdateTransactionDto } from './dto/update-transaction.dto';
@@ -14,6 +14,40 @@ import { adjustBalance, balanceDelta } from '../accounts/account-balance.util';
 export class TransactionsService {
   constructor(private prisma: PrismaService) {}
 
+  /**
+   * Validates the category/subcategory a transaction will end up with: both visible to the user,
+   * the category of the same type as the transaction and the subcategory a child of that category.
+   */
+  private async validateClassification(
+    userId: string,
+    type: TransactionType,
+    categoryId: string | null,
+    subcategoryId: string | null,
+  ): Promise<void> {
+    if (!categoryId) {
+      if (subcategoryId) throw new BadRequestException('A subcategory requires its category');
+      return;
+    }
+
+    const category = await this.prisma.category.findUnique({ where: { id: categoryId } });
+    if (!category || (category.userId && category.userId !== userId)) {
+      throw new NotFoundException('Category not found');
+    }
+    if (category.type !== type) {
+      throw new BadRequestException(`Category "${category.name}" is ${category.type} and the transaction is ${type}`);
+    }
+
+    if (subcategoryId) {
+      const subcategory = await this.prisma.category.findUnique({ where: { id: subcategoryId } });
+      if (!subcategory || (subcategory.userId && subcategory.userId !== userId)) {
+        throw new NotFoundException('Subcategory not found');
+      }
+      if (subcategory.parentId !== categoryId) {
+        throw new BadRequestException(`Subcategory "${subcategory.name}" does not belong to category "${category.name}"`);
+      }
+    }
+  }
+
   async create(userId: string, dto: CreateTransactionDto): Promise<TransactionResponseDto> {
     const account = await this.prisma.account.findUnique({
       where: { id: dto.accountId },
@@ -23,21 +57,10 @@ export class TransactionsService {
       throw new NotFoundException('Account not found');
     }
 
-    let categoryId: string | null = dto.categoryId ?? null;
-    let status: TransactionStatus = TransactionStatus.CLASSIFIED;
-
-    if (dto.categoryId) {
-      const category = await this.prisma.category.findUnique({
-        where: { id: dto.categoryId },
-      });
-
-      if (!category || (category.userId && category.userId !== userId)) {
-        throw new NotFoundException('Category not found');
-      }
-    } else {
-      status = TransactionStatus.UNCLASSIFIED;
-      categoryId = null;
-    }
+    const categoryId = dto.categoryId || null;
+    const subcategoryId = dto.subcategoryId || null;
+    await this.validateClassification(userId, dto.type, categoryId, subcategoryId);
+    const status = categoryId ? TransactionStatus.CLASSIFIED : TransactionStatus.UNCLASSIFIED;
 
     const amount = new Decimal(dto.amount);
 
@@ -47,7 +70,7 @@ export class TransactionsService {
           userId,
           accountId: dto.accountId,
           categoryId,
-          subcategoryId: dto.subcategoryId,
+          subcategoryId,
           amount,
           currency: dto.currency ?? 'EUR',
           type: dto.type,
@@ -155,30 +178,20 @@ export class TransactionsService {
       }
     }
 
-    let categoryId = dto.categoryId ?? transaction.categoryId;
-    let status = transaction.status;
-
-    if (dto.categoryId !== undefined) {
-      if (dto.categoryId) {
-        const category = await this.prisma.category.findUnique({
-          where: { id: dto.categoryId },
-        });
-
-        if (!category || (category.userId && category.userId !== userId)) {
-          throw new NotFoundException('Category not found');
-        }
-        status = TransactionStatus.CLASSIFIED;
-      } else {
-        categoryId = null;
-        status = TransactionStatus.UNCLASSIFIED;
-      }
-    }
-
     const oldAmount = transaction.amount;
     const oldType = transaction.type;
     const newAmount = dto.amount !== undefined ? new Decimal(dto.amount) : transaction.amount;
     const newType = dto.type ?? transaction.type;
     const newAccountId = dto.accountId ?? transaction.accountId;
+
+    // Validate the classification the transaction ends up with (e.g. changing EXPENSE → INCOME
+    // requires an INCOME category). A new category without subcategory drops the old subcategory.
+    const categoryChanged = dto.categoryId !== undefined && (dto.categoryId || null) !== transaction.categoryId;
+    const categoryId = dto.categoryId !== undefined ? dto.categoryId || null : transaction.categoryId;
+    const subcategoryId =
+      dto.subcategoryId !== undefined ? dto.subcategoryId || null : categoryChanged ? null : transaction.subcategoryId;
+    await this.validateClassification(userId, newType, categoryId, subcategoryId);
+    const status = dto.categoryId !== undefined ? (categoryId ? TransactionStatus.CLASSIFIED : TransactionStatus.UNCLASSIFIED) : transaction.status;
 
     const updated = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.transaction.update({
@@ -186,7 +199,7 @@ export class TransactionsService {
         data: {
           accountId: dto.accountId,
           categoryId,
-          subcategoryId: dto.subcategoryId,
+          subcategoryId,
           amount: dto.amount !== undefined ? new Decimal(dto.amount) : undefined,
           currency: dto.currency,
           type: dto.type,
@@ -243,18 +256,15 @@ export class TransactionsService {
       throw new NotFoundException('Transaction not found');
     }
 
-    const category = await this.prisma.category.findUnique({
-      where: { id: dto.categoryId },
-    });
-
-    if (!category || (category.userId && category.userId !== userId)) {
-      throw new NotFoundException('Category not found');
-    }
+    // Same category keeps its subcategory; a different one drops it (it belonged to the old category)
+    const subcategoryId = dto.categoryId === transaction.categoryId ? transaction.subcategoryId : null;
+    await this.validateClassification(userId, transaction.type, dto.categoryId, subcategoryId);
 
     const updated = await this.prisma.transaction.update({
       where: { id },
       data: {
         categoryId: dto.categoryId,
+        subcategoryId,
         status: TransactionStatus.CLASSIFIED,
       },
       include: {

@@ -98,19 +98,21 @@ model Account {
 }
 
 model Category {
-  id              String        @id @default(uuid())
+  id              String          @id @default(uuid())
   userId          String?
-  user            User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user            User?           @relation(fields: [userId], references: [id], onDelete: Cascade)
   name            String
+  /// EXPENSE or INCOME. Subcategories always have the type of their parent.
+  type            TransactionType
   icon            String?
   color           String?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
   parentId        String?
-  parent          Category?     @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
-  children        Category[]    @relation("CategoryHierarchy")
-  transactions    Transaction[] @relation("TransactionCategory")
-  subTransactions Transaction[] @relation("TransactionSubcategory")
+  parent          Category?       @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children        Category[]      @relation("CategoryHierarchy")
+  transactions    Transaction[]   @relation("TransactionCategory")
+  subTransactions Transaction[]   @relation("TransactionSubcategory")
 
   @@index([userId])
   @@index([parentId])

@@ -1,5 +1,6 @@
-import { IsString, IsOptional, MaxLength, IsUUID, MinLength } from 'class-validator';
+import { IsString, IsOptional, MaxLength, IsUUID, MinLength, IsEnum } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { TransactionType } from '@prisma/client';
 
 export class CreateCategoryDto {
   @ApiProperty({ example: 'Alimentación' })
@@ -7,6 +8,10 @@ export class CreateCategoryDto {
   @MinLength(1)
   @MaxLength(50)
   name: string;
+
+  @ApiProperty({ enum: TransactionType, example: TransactionType.EXPENSE, description: 'EXPENSE or INCOME. Subcategories inherit it' })
+  @IsEnum(TransactionType)
+  type: TransactionType;
 
   @ApiProperty({ example: '🍔', required: false })
   @IsOptional()

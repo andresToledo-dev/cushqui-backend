@@ -16,7 +16,7 @@ npm run start:dev     # desarrollo con hot reload (BD dev)
 npm run build         # build de producción
 
 # Tests
-npm test              # tests unitarios (65 tests, sin BD)
+npm test              # tests unitarios (77 tests, sin BD)
 npm run test:e2e      # tests e2e (BD dev + seed; abortan si apuntan a prod)
 npm run test:cov      # coverage
 
@@ -76,6 +76,13 @@ common/         # Guards, decorators, filters
 - `amount` se guarda como **DECIMAL(19,4) positivo**; el signo viene de `type` (EXPENSE = negativo, INCOME = positivo)
 - Clasificación: `POST /transactions/:id/classify` con `{ categoryId }`
 
+### Categorías
+
+- Cada categoría tiene `type` (`TransactionType`: `EXPENSE` / `INCOME`), obligatorio al crear (`POST /categories`). El mismo nombre puede existir como gasto y como ingreso
+- **Subcategorías heredan el tipo del padre**: `POST /categories/subcategories` no acepta `type`; `PATCH` de una subcategoría no puede cambiarlo. Cambiar el tipo del padre (`PATCH /categories/:id { type }`) cambia el de sus subcategorías y se rechaza si la categoría o sus subcategorías tienen transacciones
+- **El color de la subcategoría lo envía el frontend** (`color` obligatorio, `#RRGGBB`); el backend ya no lo calcula. El icono sí se hereda del padre
+- Transacciones: la categoría debe ser del mismo tipo que la transacción y la subcategoría hija de esa categoría (crear, editar y clasificar). Al editar se valida el resultado final: cambiar el tipo exige una categoría del nuevo tipo; cambiar de categoría sin subcategoría quita la anterior
+
 ### Saldo de cuentas (Crítico)
 
 - `accounts` tiene **un único campo `balance`** (DECIMAL(19,4)); no existen `initialBalance` ni `currentBalance`
@@ -127,7 +134,7 @@ Variables (ver `.env.example`): `DATABASE_URL`, `DIRECT_URL`, `JWT_SECRET`, `JWT
 
 | Tipo Test | Comando            | Notas                                               |
 | --------- | ------------------ | --------------------------------------------------- |
-| Unit      | `npm test`         | 65 tests, no requiere BD (los corre la CI en cada PR) |
+| Unit      | `npm test`         | 77 tests, no requiere BD (los corre la CI en cada PR) |
 | E2E       | `npm run test:e2e` | BD dev con seed; abortan si `DATABASE_URL` contiene `PROD_DB_REF` |
 | Coverage  | `npm run test:cov` | Salida en `coverage/`                               |
 

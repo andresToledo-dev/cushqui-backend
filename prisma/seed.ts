@@ -103,53 +103,53 @@ const categories = await Promise.all([
     prisma.category.upsert({
       where: { id: 'cat-food' },
       update: {},
-      create: { id: 'cat-food', name: 'Alimentación', icon: '🍔', color: '#FF5733', userId: null },
+      create: { id: 'cat-food', name: 'Alimentación', icon: '🍔', color: '#FF5733', type: TransactionType.EXPENSE, userId: null },
     }),
     prisma.category.upsert({
       where: { id: 'cat-transport' },
       update: {},
-      create: { id: 'cat-transport', name: 'Transporte', icon: '🚌', color: '#33A1FF', userId: null },
+      create: { id: 'cat-transport', name: 'Transporte', icon: '🚌', color: '#33A1FF', type: TransactionType.EXPENSE, userId: null },
     }),
     prisma.category.upsert({
       where: { id: 'cat-leisure' },
       update: {},
-      create: { id: 'cat-leisure', name: 'Ocio', icon: '🎮', color: '#8E44AD', userId: null },
+      create: { id: 'cat-leisure', name: 'Ocio', icon: '🎮', color: '#8E44AD', type: TransactionType.EXPENSE, userId: null },
     }),
     prisma.category.upsert({
       where: { id: 'cat-home' },
       update: {},
-      create: { id: 'cat-home', name: 'Casa', icon: '🏠', color: '#2ECC71', userId: null },
+      create: { id: 'cat-home', name: 'Casa', icon: '🏠', color: '#2ECC71', type: TransactionType.EXPENSE, userId: null },
     }),
     prisma.category.upsert({
       where: { id: 'cat-health' },
       update: {},
-      create: { id: 'cat-health', name: 'Salud', icon: '💊', color: '#E74C3C', userId: null },
+      create: { id: 'cat-health', name: 'Salud', icon: '💊', color: '#E74C3C', type: TransactionType.EXPENSE, userId: null },
     }),
     prisma.category.upsert({
       where: { id: 'cat-shopping' },
       update: {},
-      create: { id: 'cat-shopping', name: 'Compras', icon: '🛍️', color: '#F39C12', userId: null },
+      create: { id: 'cat-shopping', name: 'Compras', icon: '🛍️', color: '#F39C12', type: TransactionType.EXPENSE, userId: null },
     }),
     prisma.category.upsert({
       where: { id: 'cat-travel' },
       update: {},
-      create: { id: 'cat-travel', name: 'Viajes', icon: '✈️', color: '#1ABC9C', userId: null },
+      create: { id: 'cat-travel', name: 'Viajes', icon: '✈️', color: '#1ABC9C', type: TransactionType.EXPENSE, userId: null },
     }),
     prisma.category.upsert({
       where: { id: 'cat-subscriptions' },
       update: {},
-      create: { id: 'cat-subscriptions', name: 'Suscripciones', icon: '📱', color: '#9B59B6', userId: null },
+      create: { id: 'cat-subscriptions', name: 'Suscripciones', icon: '📱', color: '#9B59B6', type: TransactionType.EXPENSE, userId: null },
     }),
     prisma.category.upsert({
       where: { id: 'cat-other' },
       update: {},
-      create: { id: 'cat-other', name: 'Otros', icon: '📦', color: '#95A5A6', userId: null },
+      create: { id: 'cat-other', name: 'Otros', icon: '📦', color: '#95A5A6', type: TransactionType.EXPENSE, userId: null },
     }),
     // Prestamos category with subcategories
     prisma.category.upsert({
       where: { id: 'cat-loans' },
       update: {},
-      create: { id: 'cat-loans', name: 'Préstamos', icon: '💰', color: '#FF6B35', userId: null },
+      create: { id: 'cat-loans', name: 'Préstamos', icon: '💰', color: '#FF6B35', type: TransactionType.EXPENSE, userId: null },
     }),
   ]);
 
@@ -165,7 +165,7 @@ const categories = await Promise.all([
         icon: prestamosCategory.icon,
         color: lightenColor(prestamosCategory.color || '#FF6B35', 20),
         parentId: prestamosCategory.id,
-        userId: null,
+        type: TransactionType.EXPENSE, userId: null,
       },
     });
     await prisma.category.upsert({
@@ -177,7 +177,7 @@ const categories = await Promise.all([
         icon: prestamosCategory.icon,
         color: lightenColor(lightenColor(prestamosCategory.color || '#FF6B35', 20), 15),
         parentId: prestamosCategory.id,
-        userId: null,
+        type: TransactionType.EXPENSE, userId: null,
       },
     });
   }

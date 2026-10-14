@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Exclude, Expose } from 'class-transformer';
+import { TransactionType } from '@prisma/client';
 
 export class CategoryResponseDto {
   @ApiProperty({ example: 'uuid' })
@@ -7,6 +8,9 @@ export class CategoryResponseDto {
 
   @ApiProperty({ example: 'Alimentación' })
   name: string;
+
+  @ApiProperty({ enum: TransactionType, example: TransactionType.EXPENSE })
+  type: TransactionType;
 
   @ApiProperty({ example: '🍔', required: false })
   icon?: string;
