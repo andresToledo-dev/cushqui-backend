@@ -29,7 +29,10 @@
     "deploy:prod": "node scripts/deploy-prod.js",
     "import:transactions": "ts-node scripts/import-transactions.ts",
     "import:execute": "ts-node scripts/import-transactions.ts --execute",
-    "import:resume": "ts-node scripts/import-transactions.ts --execute --resume"
+    "import:resume": "ts-node scripts/import-transactions.ts --execute --resume",
+    "import:prod": "ts-node scripts/import-transactions.ts --prod",
+    "import:prod:execute": "ts-node scripts/import-transactions.ts --prod --execute",
+    "import:prod:resume": "ts-node scripts/import-transactions.ts --prod --execute --resume"
   },
   "dependencies": {
     "@nestjs/common": "^10.3.0",

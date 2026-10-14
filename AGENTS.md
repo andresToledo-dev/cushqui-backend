@@ -128,6 +128,8 @@ Variables (ver `.env.example`): `DATABASE_URL`, `DIRECT_URL`, `JWT_SECRET`, `JWT
 - `scripts/imports/` contiene datos personales: **ignorado por git, nunca versionar**. Cada ejecución guarda sus archivos en `scripts/imports/import-<fecha_hora local>_simulation/` o `…_execute/`: Excel con columna de resultado ("Simulación" / "Importación"), `.report.json` y, en ejecución, `.log` y `.original.xlsx` (copia intacta usada por `--resume`); `registry.json` en la raíz
 - `expectedBalances` en el mapeo: saldos reales finales; si la simulación no los reproduce exactamente, `--execute` se bloquea
 - La simulación **nunca escribe**: solo login + GET para mostrar el estado del usuario. Probar `--execute` solo con autorización explícita del usuario
+- **Producción** (`npm run import:prod` / `import:prod:execute` / `import:prod:resume <runId>`): flag `--prod`, config en `scripts/import.prod.env` (ignorado; ver `.example`), API remota solo `https`, carpetas `…_prod_simulation` / `…_prod_execute`. **El script nunca crea usuarios en producción**: el usuario se registra desde la app y el script solo hace login (si no existe, se detiene sin enviar nada). Sin `--prod` solo se acepta la API local
+- La comprobación previa (health, login, usuario vacío) se hace **antes** de registrar la ejecución en `registry.json`: un intento que falla ahí no bloquea la importación real
 - Protecciones: se niega a ejecutar con filas inválidas, a reimportar el mismo Excel (hash) y a importar sobre un usuario con cuentas; un fallo ambiguo se reanuda con `--resume <runId>`, que verifica en la API antes de reenviar
 
 ## Particularidades de Testing
