@@ -1,4 +1,4 @@
-import { IsNumber, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsDateString, IsNumber, IsOptional, IsString, MaxLength } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class AdjustBalanceDto {
@@ -11,4 +11,9 @@ export class AdjustBalanceDto {
   @IsString()
   @MaxLength(255)
   note?: string;
+
+  @ApiProperty({ example: '2026-10-13T00:00:00.000Z', required: false, description: 'Date of the ADJUSTMENT movement (defaults to now)' })
+  @IsOptional()
+  @IsDateString()
+  date?: string;
 }
