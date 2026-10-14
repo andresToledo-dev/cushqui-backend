@@ -27,9 +27,9 @@
 - Reglas de saldo/movimientos, ambientes, importación, defaults en DTOs y migraciones → en `AGENTS.md`.
 - Antes de cada commit: buscar secretos (`git grep`). `scripts/imports/` y `scripts/import.env` nunca se versionan.
 - Variables de Vercel: revisar nombre ≠ valor (`API_PREFIX` tenía el valor `API_PREFIX` → todas las rutas 404).
-- `POST /auth/refresh` está roto (DTO exige UUID y el token es JWT): el script de importación re-loguea en su lugar.
+- `POST /auth/refresh`: el DTO exigía UUID y el token es JWT (toda renovación daba 400 y la app cerraba sesión a los 15 min). Corregido con `@IsJWT()` en rama `fix/refresh-token-jwt`
 
 ## Proximos pasos
 - [ ] Importación real tras corregir el Excel (simulación sin errores primero)
-- [ ] Arreglar `RefreshTokenDto` (`@IsUUID` → JWT) · e2e independientes del seed
+- [ ] e2e independientes del seed
 - [ ] `GET /accounts/:id/reconciliation` · quitar default `currency = 'EUR'` de `CreateAccountDto`
