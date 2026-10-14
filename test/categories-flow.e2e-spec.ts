@@ -54,12 +54,14 @@ describe('Categories Flow (e2e)', () => {
         .set('Authorization', `Bearer ${accessToken}`)
         .send({
           name: 'Test Category',
+          type: 'EXPENSE',
           icon: '🧪',
           color: '#FF0000',
         })
         .expect(201);
 
       expect(res.body.name).toBe('Test Category');
+      expect(res.body.type).toBe('EXPENSE');
       expect(res.body.icon).toBe('🧪');
       expect(res.body.color).toBe('#FF0000');
       expect(res.body.parentId).toBeNull();
@@ -97,17 +99,30 @@ describe('Categories Flow (e2e)', () => {
         .send({
           name: 'Test Subcategory',
           parentCategoryId: categoryId,
+          color: '#33FF33',
         })
         .expect(201);
 
       expect(res.body.name).toBe('Test Subcategory');
       expect(res.body.icon).toBe('🔬'); // Inherits parent's icon
       expect(res.body.parentId).toBe(categoryId);
-      expect(res.body.color).toBeDefined(); // Auto-generated gradient
+      expect(res.body.color).toBe('#33FF33'); // Chosen by the frontend
+      expect(res.body.type).toBe('EXPENSE'); // Inherits parent's type
       expect(res.body.userId).toBeDefined();
 
       subcategoryId = res.body.id;
       console.log('✅ POST /categories/subcategories response:', JSON.stringify(res.body, null, 2));
+    });
+
+    it('should change the type of an unused category and of its subcategories', async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/api/v1/categories/${categoryId}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ type: 'INCOME' })
+        .expect(200);
+
+      expect(res.body.type).toBe('INCOME');
+      expect(res.body.subcategories.every((s: any) => s.type === 'INCOME')).toBe(true);
     });
 
     it('should UPDATE the subcategory (name only)', async () => {
