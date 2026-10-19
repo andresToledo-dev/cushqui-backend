@@ -6,8 +6,9 @@ describe("Subcategories Flow (e2e)", () => {
   let app: INestApplication;
   let accessToken: string;
   let prestamosCategoryId: string;
-  let juanPabloSubcategoryId: string;
-  let anaSubcategoryId: string;
+  let persona1SubcategoryId: string;
+  let persona2SubcategoryId: string;
+  let createdSubcategoryId: string;
 
   beforeAll(async () => {
     app = await getSharedTestApp();
@@ -15,6 +16,10 @@ describe("Subcategories Flow (e2e)", () => {
   });
 
   afterAll(async () => {
+    // Leave the seed user's categories as they were
+    if (createdSubcategoryId) {
+      await request(app.getHttpServer()).delete(`/api/v1/categories/${createdSubcategoryId}`).set("Authorization", `Bearer ${accessToken}`);
+    }
     await closeSharedTestApp();
   });
 
@@ -26,49 +31,47 @@ describe("Subcategories Flow (e2e)", () => {
       console.log("✅ Access token obtained:", accessToken.substring(0, 20) + "...");
     });
 
-    it('should find "Préstamos" category', async () => {
+    it('should find "Prestamos" category', async () => {
       const res = await request(app.getHttpServer()).get("/api/v1/categories").set("Authorization", `Bearer ${accessToken}`).expect(200);
 
-      const prestamos = res.body.find((c: any) => c.name === "Préstamos");
+      const prestamos = res.body.find((c: any) => c.name === "Prestamos");
       expect(prestamos).toBeDefined();
       expect(prestamos.id).toBeDefined();
       expect(prestamos.icon).toBe("💰");
       expect(prestamos.color).toBe("#FF6B35");
       prestamosCategoryId = prestamos.id;
-      console.log("✅ Préstamos category found:", prestamos);
+      console.log("✅ Prestamos category found:", prestamos);
     });
 
-    it('should get subcategories of "Préstamos" (should have Juan Pablo and Ana)', async () => {
+    it('should get subcategories of "Prestamos" (default: Persona 1 and Persona 2)', async () => {
       const res = await request(app.getHttpServer()).get(`/api/v1/categories/${prestamosCategoryId}/subcategories`).set("Authorization", `Bearer ${accessToken}`).expect(200);
 
       expect(Array.isArray(res.body)).toBe(true);
-      expect(res.body.length).toBe(2);
+      const persona1 = res.body.find((s: any) => s.name === "Persona 1");
+      const persona2 = res.body.find((s: any) => s.name === "Persona 2");
 
-      const juanPablo = res.body.find((s: any) => s.name === "Juan Pablo");
-      const ana = res.body.find((s: any) => s.name === "Ana");
+      expect(persona1).toBeDefined();
+      expect(persona1.icon).toBe("💰");
+      expect(persona1.parentId).toBe(prestamosCategoryId);
+      console.log("✅ Persona 1 subcategory:", persona1);
 
-      expect(juanPablo).toBeDefined();
-      expect(juanPablo.icon).toBe("💰");
-      expect(juanPablo.parentId).toBe(prestamosCategoryId);
-      console.log("✅ Juan Pablo subcategory:", juanPablo);
+      expect(persona2).toBeDefined();
+      expect(persona2.icon).toBe("💰");
+      expect(persona2.parentId).toBe(prestamosCategoryId);
+      console.log("✅ Persona 2 subcategory:", persona2);
 
-      expect(ana).toBeDefined();
-      expect(ana.icon).toBe("💰");
-      expect(ana.parentId).toBe(prestamosCategoryId);
-      console.log("✅ Ana subcategory:", ana);
-
-      // Colors created by the seed (the API no longer generates subcategory colors)
-      expect(juanPablo.color).toBe("#ff895d");
-      expect(ana.color).toBe("#ff9b75");
+      // Default colors: parent lightened 20%, then 15% more (the API does not generate colors on create)
+      expect(persona1.color).toBe("#ff895d");
+      expect(persona2.color).toBe("#ff9b75");
       // Subcategories always have the type of their parent
-      expect(juanPablo.type).toBe("EXPENSE");
-      expect(ana.type).toBe("EXPENSE");
+      expect(persona1.type).toBe("EXPENSE");
+      expect(persona2.type).toBe("EXPENSE");
 
-      juanPabloSubcategoryId = juanPablo.id;
-      anaSubcategoryId = ana.id;
+      persona1SubcategoryId = persona1.id;
+      persona2SubcategoryId = persona2.id;
     });
 
-    it('should create a new subcategory under "Préstamos"', async () => {
+    it('should create a new subcategory under "Prestamos"', async () => {
       const res = await request(app.getHttpServer())
         .post("/api/v1/categories/subcategories")
         .set("Authorization", `Bearer ${accessToken}`)
@@ -83,24 +86,26 @@ describe("Subcategories Flow (e2e)", () => {
       expect(res.body.icon).toBe("💰");
       expect(res.body.parentId).toBe(prestamosCategoryId);
       expect(res.body.color).toBe("#FFB896"); // Color chosen by the frontend
-      expect(res.body.type).toBe("EXPENSE"); // Type inherited from "Préstamos"
+      expect(res.body.type).toBe("EXPENSE"); // Type inherited from "Prestamos"
+      createdSubcategoryId = res.body.id;
       console.log("✅ New subcategory created:", res.body);
     });
 
     it("should update subcategory name", async () => {
+      // Renames the subcategory this test created, not a default one
       const res = await request(app.getHttpServer())
-        .patch(`/api/v1/categories/subcategories/${juanPabloSubcategoryId}`)
+        .patch(`/api/v1/categories/subcategories/${createdSubcategoryId}`)
         .set("Authorization", `Bearer ${accessToken}`)
         .send({
-          name: "Juan Pablo Updated",
+          name: "María Updated",
         })
         .expect(200);
 
-      expect(res.body.name).toBe("Juan Pablo Updated");
-      expect(res.body.id).toBe(juanPabloSubcategoryId);
+      expect(res.body.name).toBe("María Updated");
+      expect(res.body.id).toBe(createdSubcategoryId);
       // Other fields should remain unchanged
       expect(res.body.icon).toBe("💰");
-      expect(res.body.color).toBe("#ff895d");
+      expect(res.body.color).toBe("#FFB896");
       console.log("✅ Subcategory updated:", res.body);
     });
 
@@ -110,7 +115,7 @@ describe("Subcategories Flow (e2e)", () => {
         .set("Authorization", `Bearer ${accessToken}`)
         .send({
           name: "Nieto",
-          parentCategoryId: juanPabloSubcategoryId, // This is a subcategory, not a top-level category
+          parentCategoryId: persona1SubcategoryId, // This is a subcategory, not a top-level category
           color: "#FFFFFF",
         })
         .expect(400);

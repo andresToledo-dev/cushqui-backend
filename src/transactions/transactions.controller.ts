@@ -90,7 +90,6 @@ export class TransactionsController {
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiResponse({ status: 200, type: TransactionResponseDto })
   @ApiResponse({ status: 404, description: 'Transaction or category not found' })
-  @ApiResponse({ status: 403, description: 'Cannot use global categories' })
   async classify(
     @CurrentUser('id') userId: string,
     @Param('id') id: string,

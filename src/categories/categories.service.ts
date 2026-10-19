@@ -12,7 +12,7 @@ type CategoryRow = {
   type: TransactionType;
   icon: string | null;
   color: string | null;
-  userId: string | null;
+  userId: string;
   parentId: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -37,24 +37,8 @@ export class CategoriesService {
   }
 
   async findAll(userId: string): Promise<CategoryResponseDto[]> {
-    // Get global top-level categories (userId: null, parentId: null)
-    // Include subcategories that belong to system (userId: null) OR current user
-    const globalCategories = await this.prisma.category.findMany({
-      where: { userId: null, parentId: null },
-      include: {
-        children: {
-          where: {
-            OR: [{ userId: null }, { userId }],
-          },
-          orderBy: { createdAt: "asc" },
-        },
-      },
-      orderBy: { name: "asc" },
-    });
-
-    // Get user top-level categories (userId: currentUserId, parentId: null)
-    // Include their subcategories (which will have same userId)
-    const userCategories = await this.prisma.category.findMany({
+    // Every category belongs to a user (default ones are created at registration)
+    const categories = await this.prisma.category.findMany({
       where: { userId, parentId: null },
       include: {
         children: {
@@ -65,7 +49,7 @@ export class CategoriesService {
       orderBy: { name: "asc" },
     });
 
-    return [...globalCategories.map((c) => this.toResponseDto(c)), ...userCategories.map((c) => this.toResponseDto(c))];
+    return categories.map((c) => this.toResponseDto(c));
   }
 
   async findById(userId: string, id: string): Promise<CategoryResponseDto> {
@@ -78,7 +62,7 @@ export class CategoriesService {
       throw new NotFoundException("Category not found");
     }
 
-    if (category.userId && category.userId !== userId) {
+    if (category.userId !== userId) {
       throw new ForbiddenException("Access denied");
     }
 
@@ -95,7 +79,7 @@ export class CategoriesService {
     }
 
     if (category.userId !== userId) {
-      throw new ForbiddenException("Cannot modify global categories");
+      throw new ForbiddenException("Access denied");
     }
 
     const typeChanged = dto.type !== undefined && dto.type !== category.type;
@@ -144,7 +128,7 @@ export class CategoriesService {
     }
 
     if (category.userId !== userId) {
-      throw new ForbiddenException("Cannot delete global categories");
+      throw new ForbiddenException("Access denied");
     }
 
     const transactionCount = await this.prisma.transaction.count({
@@ -183,7 +167,7 @@ export class CategoriesService {
     }
 
     // Verify user has access to parent category
-    if (parentCategory.userId && parentCategory.userId !== userId) {
+    if (parentCategory.userId !== userId) {
       throw new ForbiddenException("Access denied to parent category");
     }
 
@@ -218,7 +202,7 @@ export class CategoriesService {
     }
 
     // Verify user has access
-    if (subcategory.userId && subcategory.userId !== userId) {
+    if (subcategory.userId !== userId) {
       throw new ForbiddenException("Access denied");
     }
 
@@ -245,7 +229,7 @@ export class CategoriesService {
     }
 
     // Verify user has access
-    if (parentCategory.userId && parentCategory.userId !== userId) {
+    if (parentCategory.userId !== userId) {
       throw new ForbiddenException("Access denied");
     }
 

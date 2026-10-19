@@ -65,15 +65,19 @@ describe('CategoriesService', () => {
   });
 
   describe('findAll', () => {
-    it('should return global and user categories with their type', async () => {
-      mockPrisma.category.findMany
-        .mockResolvedValueOnce([buildCategory({ id: 'global-1', userId: null, name: 'Food', children: [] })])
-        .mockResolvedValueOnce([buildCategory({ id: 'user-1', type: TransactionType.INCOME, children: [] })]);
+    it('should return only the user categories with their type and subcategories', async () => {
+      mockPrisma.category.findMany.mockResolvedValueOnce([
+        buildCategory({ children: [buildCategory({ id: 'sub-1', name: 'Persona 1', parentId: categoryId })] }),
+        buildCategory({ id: 'user-1', name: 'Salario', type: TransactionType.INCOME, children: [] }),
+      ]);
 
       const result = await service.findAll(userId);
 
+      expect(mockPrisma.category.findMany).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.category.findMany.mock.calls[0][0].where).toEqual({ userId, parentId: null });
       expect(result).toHaveLength(2);
       expect(result.map((c) => c.type)).toEqual([TransactionType.EXPENSE, TransactionType.INCOME]);
+      expect(result[0].subcategories?.map((s) => s.name)).toEqual(['Persona 1']);
     });
   });
 
@@ -148,8 +152,8 @@ describe('CategoriesService', () => {
   });
 
   describe('delete', () => {
-    it('should throw ForbiddenException for global category', async () => {
-      mockPrisma.category.findUnique.mockResolvedValue(buildCategory({ userId: null }));
+    it('should throw ForbiddenException for a category of another user', async () => {
+      mockPrisma.category.findUnique.mockResolvedValue(buildCategory({ userId: 'other-user' }));
 
       await expect(service.delete(userId, categoryId)).rejects.toThrow(ForbiddenException);
     });

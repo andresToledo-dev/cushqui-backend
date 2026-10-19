@@ -10,13 +10,15 @@ npm install
 npm run db:migrate:dev   # crea una migración nueva y la aplica a BD dev
 npm run db:deploy:dev    # aplica migraciones pendientes a BD dev
 npm run prisma:seed      # datos de prueba (solo dev, opcional)
+npm run db:clean:dev <email>          # simulación: qué se borraría de la BD dev (todo lo que no sea de <email>)
+npm run db:clean:dev:execute <email>  # lo borra (copia JSON en scripts/imports/); se niega si apunta a prod
 
 # Ejecutar
 npm run start:dev     # desarrollo con hot reload (BD dev)
 npm run build         # build de producción
 
 # Tests
-npm test              # tests unitarios (77 tests, sin BD)
+npm test              # tests unitarios (95 tests, sin BD)
 npm run test:e2e      # tests e2e (BD dev + seed; abortan si apuntan a prod)
 npm run test:cov      # coverage
 
@@ -36,8 +38,8 @@ users/          # Perfil de usuario
 accounts/       # Cuentas financieras (BANK, CASH, CARD, WALLET, SAVINGS, OTHER)
 categories/     # Categorías + subcategorías (globales + usuario)
 transactions/   # CRUD + clasificación (UNCLASSIFIED → CLASSIFIED)
-imports/        # Importación Shortcut con deduplicación (fingerprint)
-integrations/   # Tokens de integración (tipo SHORTCUT)
+imports/        # Importación Shortcut (mensaje) y manual (tipo + importe + cuenta), con deduplicación (fingerprint)
+integrations/   # Tokens de integración (tipos SHORTCUT y MANUAL)
 dashboard/      # Balance, ingresos/gastos mensuales, sin clasificar
 statistics/     # Por categoría, cuenta, mensual (12 meses)
 transfers/      # Crear/editar transferencias entre cuentas (se guardan en account_movements)
@@ -63,12 +65,15 @@ common/         # Guards, decorators, filters
 - Decorador `@Public()` para rutas sin autenticación
 - Decorador `@CurrentUser()` para contexto de usuario
 
-### Importación Shortcut (Crítico)
+### Importaciones Shortcut y manual (Crítico)
 
 - Usa **token separado** (`Authorization: Bearer <SHORTCUT_TOKEN>`), NO JWT
 - Crear integración vía `POST /api/v1/integrations` → retorna `plainToken` **una sola vez**
 - Deduplicación vía **SHA256 fingerprint** en `ImportEvent` (único por user+account+source+amount+merchant+date+externalId)
 - Retorna `{ created: true }` o `{ created: false, duplicate: true, transactionId }`
+- **Cada token solo vale para su endpoint**: `SHORTCUT` → `POST /imports/shortcut` (parsea el mensaje; la integración debe tener cuenta asociada), `MANUAL` → `POST /imports/manual`. Token de otro tipo → 403
+- `POST /imports/manual { type: EXPENSE|INCOME, amount > 0, accountId | accountName, date?, description?, externalId? }`: exactamente uno de `accountId` / `accountName` (nombre sin distinguir mayúsculas, solo cuentas activas; 0 → 404, varias → 409); cuenta inactiva → 400. Crea la transacción `UNCLASSIFIED` con `source: MANUAL` y la moneda de la cuenta (`description` → `merchant`), ajusta el saldo y registra el `ImportEvent`
+- Import manual: **solo se deduplica si llega `externalId`** (mismo importe el mismo día es legítimo); sin él cada petición crea una transacción. La fingerprint de Shortcut no se toca (rompería la deduplicación de eventos ya guardados)
 
 ### Transacciones
 
@@ -78,6 +83,8 @@ common/         # Guards, decorators, filters
 
 ### Categorías
 
+- **Toda categoría pertenece a un usuario** (`userId` NOT NULL): no existen categorías globales. Al registrarse (`POST /auth/register`), el usuario recibe las **categorías base** de `src/categories/default-categories.ts` (`createDefaultCategories`, en la misma transacción que crea el usuario); son suyas y puede editarlas o borrarlas. El seed usa la misma función
+- Categorías de otro usuario: 403 en `/categories`, 404 al usarlas en transacciones. Las categorías base tienen ids aleatorios: los tests las buscan por nombre y tipo (`findCategory` en `test/shared-test.module.ts`), nunca por id fijo
 - Cada categoría tiene `type` (`TransactionType`: `EXPENSE` / `INCOME`), obligatorio al crear (`POST /categories`). El mismo nombre puede existir como gasto y como ingreso
 - **Subcategorías heredan el tipo del padre**: `POST /categories/subcategories` no acepta `type`; `PATCH` de una subcategoría no puede cambiarlo. Cambiar el tipo del padre (`PATCH /categories/:id { type }`) cambia el de sus subcategorías y se rechaza si la categoría o sus subcategorías tienen transacciones
 - **El color de la subcategoría lo envía el frontend** (`color` obligatorio, `#RRGGBB`); el backend ya no lo calcula. El icono sí se hereda del padre
@@ -136,11 +143,11 @@ Variables (ver `.env.example`): `DATABASE_URL`, `DIRECT_URL`, `JWT_SECRET`, `JWT
 
 | Tipo Test | Comando            | Notas                                               |
 | --------- | ------------------ | --------------------------------------------------- |
-| Unit      | `npm test`         | 77 tests, no requiere BD (los corre la CI en cada PR) |
+| Unit      | `npm test`         | 95 tests, no requiere BD (los corre la CI en cada PR) |
 | E2E       | `npm run test:e2e` | BD dev con seed; abortan si `DATABASE_URL` contiene `PROD_DB_REF` |
 | Coverage  | `npm run test:cov` | Salida en `coverage/`                               |
 
-**Los tests e2e crean datos reales** y dependen del usuario/cuentas del seed (`npm run prisma:seed` en dev antes de ejecutarlos).
+**Los tests e2e crean datos reales** y dependen del usuario/cuentas del seed (`npm run prisma:seed` en dev antes de ejecutarlos). Para dejar la BD dev solo con tus datos: `npm run db:clean:dev:execute <tu email>` (borra el usuario seed y los creados por los tests).
 
 ## Problemas Comunes
 
@@ -159,7 +166,7 @@ Después de `npm run prisma:seed`:
 
 - **Email**: `test@cushqui.local`
 - **Password**: `Password123!`
-- Pre-cargados: 3 cuentas, 9 categorías, 4 transacciones
+- Pre-cargados: 3 cuentas, las categorías base (12 de gasto + 5 de ingreso; Prestamos con Persona 1 y Persona 2), 4 transacciones
 
 ## Base de API
 

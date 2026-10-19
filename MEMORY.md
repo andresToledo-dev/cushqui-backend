@@ -1,12 +1,12 @@
 # MEMORY.md - Cushqui Backend
 
 ## Estado actual
-- **Tests unitarios**: 65/65 pasando ✅ · e2e no ejecutados tras los últimos cambios (necesitan BD dev con seed)
-- Repo en GitHub (`main` producción en Vercel, `dev` por defecto). Producción desplegada: `https://cushqui-backend.vercel.app`
-- **Importación Excel**: ejecución `import-2026-10-13_21-11-51_execute` detenida en Gastos!1521 (P2028, no guardada) con 1185/2943 importadas. Causa: pooler 6543 (~0,5 s/consulta) + `connection_limit=1` + maxWait 2 s. Arreglado (session pooler local + transactionOptions). Pendiente: `npm run import:resume import-2026-10-13_21-11-51_execute` (no usar `-- --flag`: PowerShell 5.1 quita el `--`) (lo lanza el usuario o con su permiso explícito)
-- **Carga en producción** (rama `feature/import-prod`, sin commit): mismo script con `--prod` contra la API de Vercel; el Excel es la fuente (dev tiene datos de prueba: Revolut Corriente 156,22 ≠ 171,22). Pendiente: el usuario se registra en la app y lanza `npm run import:prod:execute` (~2–3 h por latencia iad1↔eu-west-1)
-- **Rama `feature/category-type`** (sin commit): `type` en categorías + color de subcategoría desde el frontend. Migración `20261014120000_category_type` **sin aplicar** (probada con ROLLBACK sobre la BD dev); hasta aplicarla, la API local da 500 en categorías
-- Script de importación, `openingDate`/`date` y `transactionOptions` en rama `feature/excel-import` (PR a `dev` y luego a `main`)
+- **Tests**: unitarios 95/95 ✅ · e2e 88/88 ✅ (dos veces seguidas, 2026-10-19). BD dev limpiada después: **solo queda `test@roto.com`** (copias en `scripts/imports/db-clean-backup-*.json`). Para volver a correr e2e: seed → e2e → `db:clean:dev:execute test@roto.com`
+- Repo en GitHub (`main` producción en Vercel región `dub1`, `dev` por defecto). Producción: `https://cushqui-backend.vercel.app`
+- Importación Excel en dev completada (`test@roto.com`, luego con datos de prueba). **Carga en producción** (`--prod`, fusionado en `main`): pendiente de que el usuario se registre en la app y lance `npm run import:prod:execute` (~40 min estimados)
+- **Rama `feature/manual-import`** (sin commit, sin PR hasta cerrar el tema de tests): `IntegrationType.MANUAL` + `POST /imports/manual`; categorías por usuario (`userId` NOT NULL, categorías base al registrarse) y `scripts/clean-dev-db.ts`. Migraciones `…_integration_type_manual` y `…_category_user_required` **aplicadas en dev**; la segunda aborta en prod si hubiera categorías sin usuario
+- Pendiente: decidir la estrategia de e2e (propuesta: BD de test aparte + usuario propio por suite)
+- `Task1.md` eliminado del historial; quedan `refs/original` locales y copia en `%TEMP%\cushqui-history-backup-20261014-191722\` (limpieza pendiente, ofrecida)
 
 ## Decisiones y porque
 
@@ -22,9 +22,12 @@
 | Import: subcategoría de Prestamos solo si el comentario empieza por `Nombre:` | Regla del usuario; el resto queda en Prestamos sin subcategoría. Cuenta `Bitcoin Uphold` (nombre del Excel). |
 | `Category.type` reutiliza `TransactionType`; subcategorías heredan el tipo | Comparación directa con el tipo de la transacción; una subcategoría nunca puede diferir del padre. |
 | Migración divide categorías usadas por gastos e ingresos (Cortes, Otros, Inversion) en dos | Elegido por el usuario: no deja transacciones con categoría de otro tipo. Aborta si queda alguna incoherencia. |
+| Import manual: tipo explícito (`type`), nuevo `IntegrationType.MANUAL`, cuenta por `accountId` o `accountName` | Elegido por el usuario. Cada token solo vale para su endpoint (403). Sin `externalId` no se deduplica. |
+| Sin categorías globales; categorías base por usuario al registrarse | Pedido del usuario: cada uno edita/borra las suyas. Los nombres coinciden con el mapeo del Excel: la importación las reutiliza. |
 | Editar transacción: se valida el resultado final (tipo + categoría) y el saldo se revierte y reaplica | Pedido del usuario: gasto 20 → ingreso 20 lleva el saldo de 60 a 100. |
 
 ## Errores a evitar
+- **Nunca `vercel build` en el proyecto local**: corre `npm ci` y borró `node_modules`. Si hace falta, en una copia (`git archive` a `%TEMP%`).
 - Reglas de saldo/movimientos, ambientes, importación, defaults en DTOs y migraciones → en `AGENTS.md`.
 - Antes de cada commit: buscar secretos (`git grep`). `scripts/imports/` y `scripts/import.env` nunca se versionan.
 - Variables de Vercel: revisar nombre ≠ valor (`API_PREFIX` tenía el valor `API_PREFIX` → todas las rutas 404).

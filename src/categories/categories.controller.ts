@@ -22,7 +22,7 @@ export class CategoriesController {
 
   @Get()
   @ApiBearerAuth()
-  @ApiOperation({ summary: "List all categories (global + user)" })
+  @ApiOperation({ summary: "List the user's categories with their subcategories" })
   @ApiResponse({ status: 200, type: [CategoryResponseDto] })
   async findAll(@CurrentUser("id") userId: string): Promise<CategoryResponseDto[]> {
     return this.categoriesService.findAll(userId);
@@ -44,7 +44,7 @@ export class CategoriesController {
   @ApiParam({ name: "id", format: "uuid" })
   @ApiResponse({ status: 200, type: CategoryResponseDto })
   @ApiResponse({ status: 404, description: "Category not found" })
-  @ApiResponse({ status: 403, description: "Cannot modify global categories" })
+  @ApiResponse({ status: 403, description: "Category of another user" })
   async update(@CurrentUser("id") userId: string, @Param("id") id: string, @Body() dto: UpdateCategoryDto): Promise<CategoryResponseDto> {
     return this.categoriesService.update(userId, id, dto);
   }
@@ -56,7 +56,7 @@ export class CategoriesController {
   @ApiParam({ name: "id", format: "uuid" })
   @ApiResponse({ status: 204, description: "Category deleted" })
   @ApiResponse({ status: 404, description: "Category not found" })
-  @ApiResponse({ status: 403, description: "Cannot delete global categories or category with transactions" })
+  @ApiResponse({ status: 403, description: "Category of another user, with transactions or with subcategories" })
   async delete(@CurrentUser("id") userId: string, @Param("id") id: string): Promise<void> {
     return this.categoriesService.delete(userId, id);
   }

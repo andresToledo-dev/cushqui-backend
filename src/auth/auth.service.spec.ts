@@ -7,6 +7,7 @@ import { AuthService } from './auth.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { DEFAULT_CATEGORIES, lightenColor } from '../categories/default-categories';
 
 jest.mock('bcrypt');
 
@@ -16,11 +17,16 @@ describe('AuthService', () => {
   let jwtService: JwtService;
   let configService: ConfigService;
 
-  const mockPrisma = {
+  const mockPrisma: any = {
     user: {
       findUnique: jest.fn(),
       create: jest.fn(),
     },
+    category: {
+      createMany: jest.fn(),
+    },
+    // Register runs inside a transaction: the callback receives the same mock
+    $transaction: jest.fn((callback) => callback(mockPrisma)),
   };
 
   const mockJwtService = {
@@ -94,6 +100,46 @@ describe('AuthService', () => {
           name: dto.name,
         },
       });
+    });
+
+    it('should create the default categories for the new user in the same transaction', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(null);
+      (bcrypt.hash as jest.Mock).mockResolvedValue('hashed-password');
+      mockPrisma.user.create.mockResolvedValue({ id: 'user-id' });
+      mockJwtService.sign.mockReturnValue('token');
+
+      await service.register({ email: 'new@example.com', password: 'Password123!', name: 'New' });
+
+      expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
+      const [[{ data: parents }], [{ data: children }]] = mockPrisma.category.createMany.mock.calls;
+
+      const expenses = Object.keys(DEFAULT_CATEGORIES.EXPENSE);
+      const incomes = Object.keys(DEFAULT_CATEGORIES.INCOME);
+      expect(parents).toHaveLength(expenses.length + incomes.length);
+      expect(parents.every((c: any) => c.userId === 'user-id' && !c.parentId)).toBe(true);
+      expect(parents.filter((c: any) => c.type === 'EXPENSE').map((c: any) => c.name)).toEqual(expenses);
+      expect(parents.filter((c: any) => c.type === 'INCOME').map((c: any) => c.name)).toEqual(incomes);
+      expect(parents.find((c: any) => c.name === 'Café')).toMatchObject({ icon: '☕', color: '#6D4C41' });
+
+      // Prestamos subcategories: same user, type and icon as the parent, lighter colors
+      const prestamos = parents.find((c: any) => c.name === 'Prestamos');
+      expect(children.map((c: any) => c.name)).toEqual(['Persona 1', 'Persona 2']);
+      for (const child of children) {
+        expect(child).toMatchObject({ userId: 'user-id', parentId: prestamos.id, type: 'EXPENSE', icon: '💰' });
+        expect(child.color).toMatch(/^#[0-9a-f]{6}$/);
+      }
+      expect(children[0].color).toBe(lightenColor('#FF6B35', 20));
+      expect(children[1].color).toBe(lightenColor(children[0].color, 15));
+    });
+
+    it('should not create the user if the default categories fail', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(null);
+      (bcrypt.hash as jest.Mock).mockResolvedValue('hashed-password');
+      mockPrisma.user.create.mockResolvedValue({ id: 'user-id' });
+      mockPrisma.category.createMany.mockRejectedValueOnce(new Error('db down'));
+
+      await expect(service.register({ email: 'new@example.com', password: 'Password123!', name: 'New' })).rejects.toThrow('db down');
+      expect(mockJwtService.sign).not.toHaveBeenCalled();
     });
 
     it('should throw ConflictException if email already exists', async () => {
