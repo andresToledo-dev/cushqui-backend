@@ -8,6 +8,7 @@ import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { TokenResponseDto } from './dto/token-response.dto';
 import { UserResponseDto } from './dto/user-response.dto';
 import { ConfigService } from '@nestjs/config';
+import { createDefaultCategories } from '../categories/default-categories';
 
 @Injectable()
 export class AuthService {
@@ -28,12 +29,17 @@ export class AuthService {
 
     const passwordHash = await bcrypt.hash(dto.password, 12);
 
-    const user = await this.prisma.user.create({
-      data: {
-        email: dto.email,
-        passwordHash,
-        name: dto.name,
-      },
+    // Every user starts with the default categories (theirs to edit or delete)
+    const user = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.user.create({
+        data: {
+          email: dto.email,
+          passwordHash,
+          name: dto.name,
+        },
+      });
+      await createDefaultCategories(tx, created.id);
+      return created;
     });
 
     return this.generateTokens(user.id);

@@ -1,6 +1,6 @@
 import { INestApplication } from "@nestjs/common";
 import * as request from "supertest";
-import { getSharedTestApp, getAccessToken, closeSharedTestApp } from "./shared-test.module";
+import { getSharedTestApp, getAccessToken, closeSharedTestApp, findCategory } from "./shared-test.module";
 
 describe("Shortcut Balance Flow (e2e)", () => {
   let app: INestApplication;
@@ -11,13 +11,14 @@ describe("Shortcut Balance Flow (e2e)", () => {
   let importedTransactionId: string;
   const expenseAmount = 25.5;
 
-  // Category ID from context: cat-loans
-  const categoryId = "cat-loans";
+  // Default "Prestamos" category of the seed user (looked up by name: its id is random)
+  let categoryId: string;
   const accountId = "revolut-account";
 
   beforeAll(async () => {
     app = await getSharedTestApp();
     accessToken = getAccessToken();
+    categoryId = (await findCategory("Prestamos", "EXPENSE")).id;
   });
 
   afterAll(async () => {
@@ -112,7 +113,7 @@ describe("Shortcut Balance Flow (e2e)", () => {
       console.log("✅ Verified UNCLASSIFIED transaction:", JSON.stringify(importedTx, null, 2));
     });
 
-    it("should classify the transaction using cat-loans category", async () => {
+    it("should classify the transaction using the Prestamos category", async () => {
       const res = await request(app.getHttpServer()).get("/api/v1/transactions").set("Authorization", `Bearer ${accessToken}`).query({ limit: 5 }).expect(200);
 
       const importedTx = res.body.data.find((tx: any) => tx.source === "REVOLUT" && tx.status === "UNCLASSIFIED" && tx.amount === expenseAmount);

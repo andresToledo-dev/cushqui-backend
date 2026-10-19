@@ -2,7 +2,9 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ImportsService } from './imports.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ShortcutImportDto } from './dto/shortcut-import.dto';
-import { TransactionSource, TransactionType, TransactionStatus, FinalDecision } from '@prisma/client';
+import { ManualImportDto } from './dto/manual-import.dto';
+import { TransactionSource, TransactionType, TransactionStatus, FinalDecision, IntegrationType } from '@prisma/client';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Decimal } from '@prisma/client/runtime/library';
 
 describe('ImportsService', () => {
@@ -32,6 +34,8 @@ describe('ImportsService', () => {
     },
     account: {
       findUnique: jest.fn(),
+      findFirst: jest.fn(),
+      findMany: jest.fn(),
       update: jest.fn(),
     },
     $transaction: jest.fn((callback) => callback(mockTx)),
@@ -204,6 +208,177 @@ describe('ImportsService', () => {
       expect(fingerprintCall.data.fingerprint).toBeDefined();
       expect(typeof fingerprintCall.data.fingerprint).toBe('string');
       expect(fingerprintCall.data.fingerprint.length).toBe(64);
+    });
+  });
+
+  describe('importManual', () => {
+    const manualIntegration = { id: integrationId, userId, type: IntegrationType.MANUAL };
+    const account = {
+      id: accountId,
+      userId,
+      name: 'Revolut',
+      currency: 'USD',
+      isActive: true,
+    };
+
+    beforeEach(() => {
+      mockPrisma.importEvent.findUnique.mockResolvedValue(null);
+      mockPrisma.importEvent.create.mockResolvedValue({});
+      mockPrisma.integration.update.mockResolvedValue({});
+      mockTx.transaction.create.mockResolvedValue({ id: 'manual-tx-id' });
+      mockTx.account.update.mockResolvedValue({});
+    });
+
+    it('should create an EXPENSE transaction for an account given by id', async () => {
+      mockPrisma.account.findFirst.mockResolvedValue(account);
+      const dto: ManualImportDto = {
+        type: TransactionType.EXPENSE,
+        amount: 15.5,
+        accountId,
+        date: '2026-10-02T12:00:00Z',
+        description: 'Cena',
+      };
+
+      const result = await service.importManual(manualIntegration, dto);
+
+      expect(result).toEqual({ success: true, created: true, transactionId: 'manual-tx-id' });
+      expect(mockPrisma.account.findFirst).toHaveBeenCalledWith({ where: { id: accountId, userId } });
+      const txData = mockTx.transaction.create.mock.calls[0][0].data;
+      expect(txData).toMatchObject({
+        userId,
+        accountId,
+        currency: 'USD',
+        type: TransactionType.EXPENSE,
+        status: TransactionStatus.UNCLASSIFIED,
+        source: TransactionSource.MANUAL,
+        merchant: 'Cena',
+        transactionDate: new Date(dto.date!),
+      });
+      expect(txData.amount).toEqual(new Decimal(15.5));
+      expect(mockTx.account.update).toHaveBeenCalledWith({
+        where: { id: accountId },
+        data: { balance: { increment: new Decimal(-15.5) } },
+      });
+      const eventData = mockPrisma.importEvent.create.mock.calls[0][0].data;
+      expect(eventData).toMatchObject({
+        userId,
+        integrationId,
+        source: TransactionSource.MANUAL,
+        finalDecision: FinalDecision.EXPENSE,
+        transactionId: 'manual-tx-id',
+      });
+      expect(eventData.fingerprint).toHaveLength(64);
+      expect(eventData.message).toContain('EXPENSE 15.50 USD');
+      expect(mockPrisma.integration.update).toHaveBeenCalled();
+    });
+
+    it('should create an INCOME transaction for an account given by name (case-insensitive), dated now by default', async () => {
+      mockPrisma.account.findMany.mockResolvedValue([account]);
+      const before = Date.now();
+
+      const result = await service.importManual(manualIntegration, {
+        type: TransactionType.INCOME,
+        amount: 100,
+        accountName: ' revolut ',
+      });
+
+      expect(result.created).toBe(true);
+      expect(mockPrisma.account.findMany).toHaveBeenCalledWith({
+        where: { userId, isActive: true, name: { equals: 'revolut', mode: 'insensitive' } },
+      });
+      const txData = mockTx.transaction.create.mock.calls[0][0].data;
+      expect(txData.type).toBe(TransactionType.INCOME);
+      expect(txData.transactionDate.getTime()).toBeGreaterThanOrEqual(before);
+      expect(mockTx.account.update).toHaveBeenCalledWith({
+        where: { id: accountId },
+        data: { balance: { increment: new Decimal(100) } },
+      });
+      expect(mockPrisma.importEvent.create.mock.calls[0][0].data.finalDecision).toBe(FinalDecision.INCOME);
+    });
+
+    it('should return duplicate when the same externalId is imported again', async () => {
+      mockPrisma.account.findFirst.mockResolvedValue(account);
+      mockPrisma.importEvent.findUnique.mockResolvedValue({ id: 'event-id', transactionId: 'existing-tx-id' });
+
+      const result = await service.importManual(manualIntegration, {
+        type: TransactionType.EXPENSE,
+        amount: 10,
+        accountId,
+        date: '2026-10-02T12:00:00Z',
+        externalId: 'ext-1',
+      });
+
+      expect(result).toEqual({ success: true, created: false, duplicate: true, transactionId: 'existing-tx-id' });
+      expect(mockTx.transaction.create).not.toHaveBeenCalled();
+      expect(mockTx.account.update).not.toHaveBeenCalled();
+    });
+
+    it('should repeat the fingerprint only for the same externalId', async () => {
+      mockPrisma.account.findFirst.mockResolvedValue(account);
+      const dto: ManualImportDto = { type: TransactionType.EXPENSE, amount: 10, accountId, date: '2026-10-02T12:00:00Z' };
+
+      await service.importManual(manualIntegration, { ...dto, externalId: 'ext-1' });
+      await service.importManual(manualIntegration, { ...dto, externalId: 'ext-1' });
+      await service.importManual(manualIntegration, dto);
+      await service.importManual(manualIntegration, dto);
+
+      const [a, b, c, d] = mockPrisma.importEvent.findUnique.mock.calls.map((call) => call[0].where.fingerprint);
+      expect(a).toBe(b);
+      expect(c).not.toBe(d);
+    });
+
+    it('should reject a non-MANUAL integration token', async () => {
+      await expect(
+        service.importManual(
+          { ...manualIntegration, type: IntegrationType.SHORTCUT },
+          { type: TransactionType.EXPENSE, amount: 10, accountId },
+        ),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockTx.transaction.create).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['both accountId and accountName', { accountId, accountName: 'Revolut' }],
+      ['neither accountId nor accountName', {}],
+    ])('should reject %s', async (_label, accountFields) => {
+      await expect(
+        service.importManual(manualIntegration, { type: TransactionType.EXPENSE, amount: 10, ...accountFields }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockTx.transaction.create).not.toHaveBeenCalled();
+    });
+
+    it('should return 404 when the account does not exist or belongs to another user', async () => {
+      mockPrisma.account.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.importManual(manualIntegration, { type: TransactionType.EXPENSE, amount: 10, accountId: 'other-account' }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should return 404 when no active account has that name', async () => {
+      mockPrisma.account.findMany.mockResolvedValue([]);
+
+      await expect(
+        service.importManual(manualIntegration, { type: TransactionType.EXPENSE, amount: 10, accountName: 'Nope' }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should return 409 when several active accounts share the name', async () => {
+      mockPrisma.account.findMany.mockResolvedValue([account, { ...account, id: 'other-id' }]);
+
+      await expect(
+        service.importManual(manualIntegration, { type: TransactionType.EXPENSE, amount: 10, accountName: 'Revolut' }),
+      ).rejects.toThrow(ConflictException);
+      expect(mockTx.transaction.create).not.toHaveBeenCalled();
+    });
+
+    it('should reject an inactive account', async () => {
+      mockPrisma.account.findFirst.mockResolvedValue({ ...account, isActive: false });
+
+      await expect(
+        service.importManual(manualIntegration, { type: TransactionType.EXPENSE, amount: 10, accountId }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockTx.transaction.create).not.toHaveBeenCalled();
     });
   });
 });

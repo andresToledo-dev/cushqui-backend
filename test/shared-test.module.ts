@@ -53,6 +53,21 @@ export async function getSharedTestApp(): Promise<INestApplication> {
   return appInstance;
 }
 
+/**
+ * Finds a top-level category of the seed user by name and type (default categories have random ids).
+ * Returns it with its subcategories.
+ */
+export async function findCategory(name: string, type: 'EXPENSE' | 'INCOME'): Promise<any> {
+  const res = await request(appInstance.getHttpServer())
+    .get('/api/v1/categories')
+    .set('Authorization', `Bearer ${getAccessToken()}`);
+  const category = res.body.find((c: any) => c.name === name && c.type === type);
+  if (!category) {
+    throw new Error(`Category ${type}/${name} not found for the seed user: run npm run prisma:seed`);
+  }
+  return category;
+}
+
 export function getAccessToken(): string {
   if (!accessTokenInstance) {
     throw new Error('Access token not initialized. Call getSharedTestApp() first.');

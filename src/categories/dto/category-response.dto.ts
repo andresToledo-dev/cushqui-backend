@@ -18,9 +18,9 @@ export class CategoryResponseDto {
   @ApiProperty({ example: '#FF5733', required: false })
   color?: string;
 
-  @ApiProperty({ example: null, required: false })
+  @ApiProperty({ example: 'uuid-of-user' })
   @Expose()
-  userId?: string | null;
+  userId: string;
 
   @ApiProperty({ example: null, required: false })
   @Expose()

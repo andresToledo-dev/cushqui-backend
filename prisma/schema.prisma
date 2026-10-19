@@ -48,6 +48,8 @@ enum TransactionSource {
 
 enum IntegrationType {
   SHORTCUT
+  /// Token for POST /imports/manual (account, amount and type sent explicitly)
+  MANUAL
 }
 
 enum FinalDecision {
@@ -99,8 +101,9 @@ model Account {
 
 model Category {
   id              String          @id @default(uuid())
-  userId          String?
-  user            User?           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Always set: there are no global categories (the defaults are created per user at registration)
+  userId          String
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   name            String
   /// EXPENSE or INCOME. Subcategories always have the type of their parent.
   type            TransactionType

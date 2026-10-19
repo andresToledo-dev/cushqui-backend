@@ -15,7 +15,7 @@ export class TransactionsService {
   constructor(private prisma: PrismaService) {}
 
   /**
-   * Validates the category/subcategory a transaction will end up with: both visible to the user,
+   * Validates the category/subcategory a transaction will end up with: both owned by the user,
    * the category of the same type as the transaction and the subcategory a child of that category.
    */
   private async validateClassification(
@@ -30,7 +30,7 @@ export class TransactionsService {
     }
 
     const category = await this.prisma.category.findUnique({ where: { id: categoryId } });
-    if (!category || (category.userId && category.userId !== userId)) {
+    if (!category || category.userId !== userId) {
       throw new NotFoundException('Category not found');
     }
     if (category.type !== type) {
@@ -39,7 +39,7 @@ export class TransactionsService {
 
     if (subcategoryId) {
       const subcategory = await this.prisma.category.findUnique({ where: { id: subcategoryId } });
-      if (!subcategory || (subcategory.userId && subcategory.userId !== userId)) {
+      if (!subcategory || subcategory.userId !== userId) {
         throw new NotFoundException('Subcategory not found');
       }
       if (subcategory.parentId !== categoryId) {
