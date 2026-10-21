@@ -87,15 +87,14 @@ async function main() {
 
   console.log('✅ Opening movements created');
 
-  // Default categories owned by the seed user, the same ones every user gets at registration
-  if ((await prisma.category.count({ where: { userId: user.id } })) === 0) {
-    await prisma.$transaction((tx) => createDefaultCategories(tx, user.id));
-  }
+  // Default categories owned by the seed user, the same ones every user gets at registration.
+  // Only the missing ones: the seed user may already have categories of its own (re-runs, manual tests)
+  const createdCategories = await prisma.$transaction((tx) => createDefaultCategories(tx, user.id, { onlyMissing: true }));
   const findCategory = async (name: string) =>
     prisma.category.findFirstOrThrow({ where: { userId: user.id, name, type: TransactionType.EXPENSE, parentId: null } });
   const categories = [await findCategory('Alimentación'), await findCategory('Transporte')];
 
-  console.log('✅ Default categories ready for', user.email);
+  console.log(`✅ Default categories ready for ${user.email} (${createdCategories} created)`);
 
   const now = new Date();
   const tenDaysAgo = new Date(now.getTime() - 10 * 24 * 60 * 60 * 1000);

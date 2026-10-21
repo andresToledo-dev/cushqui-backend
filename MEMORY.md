@@ -28,6 +28,7 @@
 | Editar transacción: se valida el resultado final (tipo + categoría) y el saldo se revierte y reaplica | Pedido del usuario: gasto 20 → ingreso 20 lleva el saldo de 60 a 100. |
 
 ## Errores a evitar
+- Al cambiar de rama o tras un merge con cambios en `schema.prisma`: parar `start:dev` y `npx prisma generate` (un generate con EPERM deja tipos viejos → errores de compilación). El seed de una rama vieja falla contra la BD migrada (categorías `userId` null).
 - **Nunca `vercel build` en el proyecto local**: corre `npm ci` y borró `node_modules`. Si hace falta, en una copia (`git archive` a `%TEMP%`).
 - Reglas de saldo/movimientos, ambientes, importación, defaults en DTOs y migraciones → en `AGENTS.md`.
 - Antes de cada commit: buscar secretos (`git grep`). `scripts/imports/` y `scripts/import.env` nunca se versionan.

@@ -43,13 +43,27 @@ export function lightenColor(hex: string, percent: number): string {
  * Creates the default categories for a user inside the caller's transaction.
  * Subcategories inherit icon and type; their colors follow the frontend convention
  * (parent lightened 20%, then each one 15% lighter than the previous).
+ *
+ * `onlyMissing` (seed): skips the defaults the user already has (same name and type, top level),
+ * so it can run on a user that already has categories. Returns how many top-level categories it created.
  */
-export async function createDefaultCategories(tx: Prisma.TransactionClient, userId: string): Promise<void> {
+export async function createDefaultCategories(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  { onlyMissing = false }: { onlyMissing?: boolean } = {},
+): Promise<number> {
+  const existing = new Set<string>();
+  if (onlyMissing) {
+    const own = await tx.category.findMany({ where: { userId, parentId: null }, select: { name: true, type: true } });
+    own.forEach((c) => existing.add(`${c.type}/${c.name}`));
+  }
+
   const parents: Prisma.CategoryCreateManyInput[] = [];
   const children: Prisma.CategoryCreateManyInput[] = [];
 
   for (const type of [TransactionType.EXPENSE, TransactionType.INCOME] as const) {
     for (const [name, def] of Object.entries(DEFAULT_CATEGORIES[type])) {
+      if (existing.has(`${type}/${name}`)) continue;
       const id = randomUUID();
       parents.push({ id, userId, name, type, icon: def.icon, color: def.color });
 
@@ -61,6 +75,7 @@ export async function createDefaultCategories(tx: Prisma.TransactionClient, user
     }
   }
 
-  await tx.category.createMany({ data: parents });
-  await tx.category.createMany({ data: children });
+  if (parents.length) await tx.category.createMany({ data: parents });
+  if (children.length) await tx.category.createMany({ data: children });
+  return parents.length;
 }
