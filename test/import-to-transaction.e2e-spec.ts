@@ -23,7 +23,7 @@ describe('Import to Transaction Flow (e2e)', () => {
     await closeSharedTestApp();
   });
 
-  describe('Import flow: login -> create integration -> link account -> import shortcut', () => {
+  describe('Import flow: login -> create integration -> link account -> import notification', () => {
     it('should login with seed user and get access token', () => {
       expect(accessToken).toBeDefined();
       expect(typeof accessToken).toBe('string');
@@ -31,19 +31,19 @@ describe('Import to Transaction Flow (e2e)', () => {
       console.log('✅ Access token obtained:', accessToken.substring(0, 20) + '...');
     });
 
-    it('should create a new integration named "shortcut_test"', async () => {
+    it('should create a new integration named "notification_test"', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/v1/integrations')
         .set('Authorization', `Bearer ${accessToken}`)
         .send({
-          name: 'shortcut_test',
-          type: 'SHORTCUT',
+          name: 'notification_test',
+          type: 'NOTIFICATION',
         })
         .expect(201);
 
       expect(res.body.id).toBeDefined();
-      expect(res.body.name).toBe('shortcut_test');
-      expect(res.body.type).toBe('SHORTCUT');
+      expect(res.body.name).toBe('notification_test');
+      expect(res.body.type).toBe('NOTIFICATION');
       expect(res.body.plainToken).toBeDefined();
 
       integrationId = res.body.id;
@@ -65,9 +65,9 @@ describe('Import to Transaction Flow (e2e)', () => {
       console.log('✅ PATCH /integrations/:id response:', JSON.stringify(res.body, null, 2));
     });
 
-    it('should create an EXPENSE import_event via /imports/shortcut', async () => {
+    it('should create an EXPENSE import_event via /imports/notification', async () => {
       const res = await request(app.getHttpServer())
-        .post('/api/v1/imports/shortcut')
+        .post('/api/v1/imports/notification')
         .set('Authorization', `Bearer ${integrationToken}`)
         .send({
           message: `Has enviado ${expenseAmount}€ a Juan Pablo. Llegará en segundos`,
@@ -79,12 +79,12 @@ describe('Import to Transaction Flow (e2e)', () => {
       expect(res.body.created).toBe(true);
       expect(res.body.transactionId).toBeDefined();
 
-      console.log('✅ POST /imports/shortcut (EXPENSE) response:', JSON.stringify(res.body, null, 2));
+      console.log('✅ POST /imports/notification (EXPENSE) response:', JSON.stringify(res.body, null, 2));
     });
 
-    it('should create an INCOME import_event via /imports/shortcut', async () => {
+    it('should create an INCOME import_event via /imports/notification', async () => {
       const res = await request(app.getHttpServer())
-        .post('/api/v1/imports/shortcut')
+        .post('/api/v1/imports/notification')
         .set('Authorization', `Bearer ${integrationToken}`)
         .send({
           message: `Has recibido ${incomeAmount}€ de Empresa SL. Llegará en segundos`,
@@ -96,12 +96,12 @@ describe('Import to Transaction Flow (e2e)', () => {
       expect(res.body.created).toBe(true);
       expect(res.body.transactionId).toBeDefined();
 
-      console.log('✅ POST /imports/shortcut (INCOME) response:', JSON.stringify(res.body, null, 2));
+      console.log('✅ POST /imports/notification (INCOME) response:', JSON.stringify(res.body, null, 2));
     });
 
-    it('should create an N/A import_event via /imports/shortcut (no transaction created)', async () => {
+    it('should create an N/A import_event via /imports/notification (no transaction created)', async () => {
       const res = await request(app.getHttpServer())
-        .post('/api/v1/imports/shortcut')
+        .post('/api/v1/imports/notification')
         .set('Authorization', `Bearer ${integrationToken}`)
         .send({
           message: 'Tu código de verificación es 123456',
@@ -113,7 +113,7 @@ describe('Import to Transaction Flow (e2e)', () => {
       expect(res.body.created).toBe(false);
       expect(res.body.transactionId).toBeUndefined();
 
-      console.log('✅ POST /imports/shortcut (N/A) response:', JSON.stringify(res.body, null, 2));
+      console.log('✅ POST /imports/notification (N/A) response:', JSON.stringify(res.body, null, 2));
     });
 
     it('should verify the EXPENSE transaction was created with UNCLASSIFIED status', async () => {

@@ -6,7 +6,7 @@ describe("Manual Import Flow (e2e)", () => {
   let app: INestApplication;
   let accessToken: string;
   let manualToken: string;
-  let shortcutToken: string;
+  let notificationToken: string;
   let accountId: string;
   let balance: number;
 
@@ -42,7 +42,7 @@ describe("Manual Import Flow (e2e)", () => {
   });
 
   describe("MANUAL integration -> import by id and by name -> duplicates and errors", () => {
-    it("should create an account and MANUAL + SHORTCUT integrations", async () => {
+    it("should create an account and MANUAL + NOTIFICATION integrations", async () => {
       const accountRes = await request(app.getHttpServer())
         .post("/api/v1/accounts")
         .set("Authorization", `Bearer ${accessToken}`)
@@ -59,12 +59,12 @@ describe("Manual Import Flow (e2e)", () => {
       expect(manualRes.body.type).toBe("MANUAL");
       manualToken = manualRes.body.plainToken;
 
-      const shortcutRes = await request(app.getHttpServer())
+      const notificationRes = await request(app.getHttpServer())
         .post("/api/v1/integrations")
         .set("Authorization", `Bearer ${accessToken}`)
-        .send({ name: "manual_test_shortcut", type: "SHORTCUT", accountId })
+        .send({ name: "manual_test_notification", type: "NOTIFICATION", accountId })
         .expect(201);
-      shortcutToken = shortcutRes.body.plainToken;
+      notificationToken = notificationRes.body.plainToken;
     });
 
     it("should import an EXPENSE by accountId and lower the balance", async () => {
@@ -121,11 +121,11 @@ describe("Manual Import Flow (e2e)", () => {
       expect(await getBalance()).toBeCloseTo(balance, 4);
     });
 
-    it("should reject a SHORTCUT token on /imports/manual and a MANUAL token on /imports/shortcut", async () => {
-      await importManual(shortcutToken, { type: "EXPENSE", amount: 1, accountId }).expect(403);
+    it("should reject a NOTIFICATION token on /imports/manual and a MANUAL token on /imports/notification", async () => {
+      await importManual(notificationToken, { type: "EXPENSE", amount: 1, accountId }).expect(403);
 
       await request(app.getHttpServer())
-        .post("/api/v1/imports/shortcut")
+        .post("/api/v1/imports/notification")
         .set("Authorization", `Bearer ${manualToken}`)
         .send({ message: "Has enviado 1€ a Juan Pablo.", date: new Date().toISOString() })
         .expect(403);

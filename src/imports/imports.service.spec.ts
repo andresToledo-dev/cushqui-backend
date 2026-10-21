@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ImportsService } from './imports.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { ShortcutImportDto } from './dto/shortcut-import.dto';
+import { NotificationImportDto } from './dto/notification-import.dto';
 import { ManualImportDto } from './dto/manual-import.dto';
 import { TransactionSource, TransactionType, TransactionStatus, FinalDecision, IntegrationType } from '@prisma/client';
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
@@ -59,9 +59,9 @@ describe('ImportsService', () => {
     jest.clearAllMocks();
   });
 
-  describe('importFromShortcut', () => {
+  describe('importFromNotification', () => {
     it('should create new EXPENSE transaction for "has enviado" message', async () => {
-      const dto: ShortcutImportDto = {
+      const dto: NotificationImportDto = {
         message: 'Has enviado 15.90€ a Juan Pablo. Llegará en segundos',
         date: '2026-10-02T12:00:00Z',
       };
@@ -83,7 +83,7 @@ describe('ImportsService', () => {
       mockPrisma.integration.update.mockResolvedValue({});
       mockTx.account.update.mockResolvedValue({});
 
-      const result = await service.importFromShortcut(userId, integrationId, accountId, dto);
+      const result = await service.importFromNotification(userId, integrationId, accountId, dto);
 
       expect(result).toEqual({
         success: true,
@@ -104,7 +104,7 @@ describe('ImportsService', () => {
     });
 
     it('should create new INCOME transaction for "has recibido" message', async () => {
-      const dto: ShortcutImportDto = {
+      const dto: NotificationImportDto = {
         message: 'Has recibido 100.00€ de Empresa SL. Llegará en segundos',
         date: '2026-10-02T12:00:00Z',
       };
@@ -126,7 +126,7 @@ describe('ImportsService', () => {
       mockPrisma.integration.update.mockResolvedValue({});
       mockTx.account.update.mockResolvedValue({});
 
-      const result = await service.importFromShortcut(userId, integrationId, accountId, dto);
+      const result = await service.importFromNotification(userId, integrationId, accountId, dto);
 
       expect(result).toEqual({
         success: true,
@@ -141,7 +141,7 @@ describe('ImportsService', () => {
     });
 
     it('should not create transaction for N/A message', async () => {
-      const dto: ShortcutImportDto = {
+      const dto: NotificationImportDto = {
         message: 'Tu código de verificación es 123456',
         date: '2026-10-02T12:00:00Z',
       };
@@ -150,7 +150,7 @@ describe('ImportsService', () => {
       mockPrisma.importEvent.create.mockResolvedValue({});
       mockPrisma.integration.update.mockResolvedValue({});
 
-      const result = await service.importFromShortcut(userId, integrationId, accountId, dto);
+      const result = await service.importFromNotification(userId, integrationId, accountId, dto);
 
       expect(result).toEqual({
         success: true,
@@ -166,7 +166,7 @@ describe('ImportsService', () => {
     });
 
     it('should return duplicate for existing import', async () => {
-      const dto: ShortcutImportDto = {
+      const dto: NotificationImportDto = {
         message: 'Has enviado 15.90€ a Juan Pablo. Llegará en segundos',
         date: '2026-10-02T12:00:00Z',
       };
@@ -179,7 +179,7 @@ describe('ImportsService', () => {
       mockPrisma.importEvent.findUnique.mockResolvedValue(existingEvent);
       mockPrisma.integration.update.mockResolvedValue({});
 
-      const result = await service.importFromShortcut(userId, integrationId, accountId, dto);
+      const result = await service.importFromNotification(userId, integrationId, accountId, dto);
 
       expect(result).toEqual({
         success: true,
@@ -191,7 +191,7 @@ describe('ImportsService', () => {
     });
 
     it('should generate consistent fingerprint', async () => {
-      const dto: ShortcutImportDto = {
+      const dto: NotificationImportDto = {
         message: 'Has enviado 15.90€ a Juan Pablo. Llegará en segundos',
         date: '2026-10-02T12:00:00Z',
       };
@@ -202,7 +202,7 @@ describe('ImportsService', () => {
       mockPrisma.integration.update.mockResolvedValue({});
       mockTx.account.update.mockResolvedValue({});
 
-      await service.importFromShortcut(userId, integrationId, accountId, dto);
+      await service.importFromNotification(userId, integrationId, accountId, dto);
 
       const fingerprintCall = mockPrisma.importEvent.create.mock.calls[0][0];
       expect(fingerprintCall.data.fingerprint).toBeDefined();
@@ -330,7 +330,7 @@ describe('ImportsService', () => {
     it('should reject a non-MANUAL integration token', async () => {
       await expect(
         service.importManual(
-          { ...manualIntegration, type: IntegrationType.SHORTCUT },
+          { ...manualIntegration, type: IntegrationType.NOTIFICATION },
           { type: TransactionType.EXPENSE, amount: 10, accountId },
         ),
       ).rejects.toThrow(ForbiddenException);

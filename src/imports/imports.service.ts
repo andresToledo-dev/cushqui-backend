@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { ShortcutImportDto } from './dto/shortcut-import.dto';
+import { NotificationImportDto } from './dto/notification-import.dto';
 import { ManualImportDto } from './dto/manual-import.dto';
 import { ImportResponseDto } from './dto/import-response.dto';
 import { TransactionSource, TransactionStatus, TransactionType, FinalDecision, IntegrationType, Account } from '@prisma/client';
@@ -12,11 +12,11 @@ import { adjustBalance, balanceDelta } from '../accounts/account-balance.util';
 export class ImportsService {
   constructor(private prisma: PrismaService) {}
 
-  async importFromShortcut(
+  async importFromNotification(
     userId: string,
     integrationId: string,
     accountId: string,
-    dto: ShortcutImportDto,
+    dto: NotificationImportDto,
   ): Promise<ImportResponseDto> {
     // Parse the message to extract amount and determine transaction type
     const { amount, finalDecision, merchant } = this.parseMessage(dto.message);
@@ -153,7 +153,7 @@ export class ImportsService {
 
   /**
    * Import sent explicitly by a MANUAL integration: the caller gives type, amount and account
-   * (by id or by name) and the transaction is created UNCLASSIFIED, like a Shortcut import.
+   * (by id or by name) and the transaction is created UNCLASSIFIED, like a notification import.
    */
   async importManual(
     integration: { id: string; userId: string; type: IntegrationType },

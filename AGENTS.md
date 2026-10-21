@@ -38,8 +38,8 @@ users/          # Perfil de usuario
 accounts/       # Cuentas financieras (BANK, CASH, CARD, WALLET, SAVINGS, OTHER)
 categories/     # Categorías + subcategorías (globales + usuario)
 transactions/   # CRUD + clasificación (UNCLASSIFIED → CLASSIFIED)
-imports/        # Importación Shortcut (mensaje) y manual (tipo + importe + cuenta), con deduplicación (fingerprint)
-integrations/   # Tokens de integración (tipos SHORTCUT y MANUAL)
+imports/        # Importación por notificación (mensaje) y manual (tipo + importe + cuenta), con deduplicación (fingerprint)
+integrations/   # Tokens de integración (tipos NOTIFICATION y MANUAL)
 dashboard/      # Balance, ingresos/gastos mensuales, sin clasificar
 statistics/     # Por categoría, cuenta, mensual (12 meses)
 transfers/      # Crear/editar transferencias entre cuentas (se guardan en account_movements)
@@ -65,19 +65,19 @@ common/         # Guards, decorators, filters
 - Decorador `@Public()` para rutas sin autenticación
 - Decorador `@CurrentUser()` para contexto de usuario
 
-### Importaciones Shortcut y manual (Crítico)
+### Importaciones por notificación y manuales (Crítico)
 
-- Usa **token separado** (`Authorization: Bearer <SHORTCUT_TOKEN>`), NO JWT
+- Usa **token separado** (`Authorization: Bearer <INTEGRATION_TOKEN>`), NO JWT
 - Crear integración vía `POST /api/v1/integrations` → retorna `plainToken` **una sola vez**
 - Deduplicación vía **SHA256 fingerprint** en `ImportEvent` (único por user+account+source+amount+merchant+date+externalId)
 - Retorna `{ created: true }` o `{ created: false, duplicate: true, transactionId }`
-- **Cada token solo vale para su endpoint**: `SHORTCUT` → `POST /imports/shortcut` (parsea el mensaje; la integración debe tener cuenta asociada), `MANUAL` → `POST /imports/manual`. Token de otro tipo → 403
+- **Cada token solo vale para su endpoint**: `NOTIFICATION` → `POST /imports/notification` (parsea el mensaje; la integración debe tener cuenta asociada), `MANUAL` → `POST /imports/manual`. Token de otro tipo → 403. Ambos tipos los usa el atajo de iOS: `NOTIFICATION` envía el texto de la notificación del banco (antes se llamaba `SHORTCUT`)
 - `POST /imports/manual { type: EXPENSE|INCOME, amount > 0, accountId | accountName, date?, description?, externalId? }`: exactamente uno de `accountId` / `accountName` (nombre sin distinguir mayúsculas, solo cuentas activas; 0 → 404, varias → 409); cuenta inactiva → 400. Crea la transacción `UNCLASSIFIED` con `source: MANUAL` y la moneda de la cuenta (`description` → `merchant`), ajusta el saldo y registra el `ImportEvent`
-- Import manual: **solo se deduplica si llega `externalId`** (mismo importe el mismo día es legítimo); sin él cada petición crea una transacción. La fingerprint de Shortcut no se toca (rompería la deduplicación de eventos ya guardados)
+- Import manual: **solo se deduplica si llega `externalId`** (mismo importe el mismo día es legítimo); sin él cada petición crea una transacción. La fingerprint de notificación no se toca (rompería la deduplicación de eventos ya guardados)
 
 ### Transacciones
 
-- `transactions` contiene **solo INCOME y EXPENSE** (manuales + imports Shortcut). Transferencias, aperturas y ajustes van en `account_movements`
+- `transactions` contiene **solo INCOME y EXPENSE** (manuales + imports por notificación). Transferencias, aperturas y ajustes van en `account_movements`
 - `amount` se guarda como **DECIMAL(19,4) positivo**; el signo viene de `type` (EXPENSE = negativo, INCOME = positivo)
 - Clasificación: `POST /transactions/:id/classify` con `{ categoryId }`
 
@@ -126,7 +126,7 @@ Guía paso a paso (Supabase, GitHub, Vercel): `DEPLOY.md`.
 - Prisma: `transactionOptions { maxWait: 10s, timeout: 20s }` en `PrismaService` (los 2 s por defecto fallaban con los picos del pooler)
 - **Nunca** escribir contraseñas, tokens ni URLs reales en archivos versionados (este incluido): solo en `.env` / `.env.production` (ignorados), Vercel y GitHub Secrets
 
-Variables (ver `.env.example`): `DATABASE_URL`, `DIRECT_URL`, `JWT_SECRET`, `JWT_REFRESH_SECRET`, `JWT_EXPIRES_IN`, `JWT_REFRESH_EXPIRES_IN`, `PORT`, `NODE_ENV`, `API_PREFIX`, `CORS_ORIGINS`, `PROD_DB_REF` (solo local: project-ref de prod, protege los e2e).
+Variables (ver `.env.example`): `DATABASE_URL`, `DIRECT_URL`, `JWT_SECRET`, `JWT_REFRESH_SECRET`, `JWT_EXPIRES_IN`, `JWT_REFRESH_EXPIRES_IN`, `PORT`, `NODE_ENV`, `API_PREFIX`, `CORS_ORIGINS`, `PROD_DB_REF` (solo local: project-ref de prod, protege los e2e), `NOTIFICATION_INTEGRATION_TOKEN` (solo local, opcional: token reutilizado por los e2e).
 
 ## Importación desde Excel (`scripts/import-transactions.ts`)
 
