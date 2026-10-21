@@ -47,7 +47,8 @@ enum TransactionSource {
 }
 
 enum IntegrationType {
-  SHORTCUT
+  /// Token for POST /imports/notification (bank notification message parsed by the backend)
+  NOTIFICATION
   /// Token for POST /imports/manual (account, amount and type sent explicitly)
   MANUAL
 }

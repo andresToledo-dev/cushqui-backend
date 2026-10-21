@@ -8,7 +8,7 @@ export class IntegrationResponseDto {
   @ApiProperty({ example: 'iPhone Shortcut' })
   name: string;
 
-  @ApiProperty({ enum: IntegrationType, example: IntegrationType.SHORTCUT })
+  @ApiProperty({ enum: IntegrationType, example: IntegrationType.NOTIFICATION })
   type: IntegrationType;
 
   @ApiProperty({ example: 'uuid-of-account', required: false })

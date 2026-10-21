@@ -2,7 +2,7 @@ import { Controller, Post, Body, UseGuards, HttpCode, HttpStatus, BadRequestExce
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { IntegrationType } from '@prisma/client';
 import { ImportsService } from './imports.service';
-import { ShortcutImportDto } from './dto/shortcut-import.dto';
+import { NotificationImportDto } from './dto/notification-import.dto';
 import { ManualImportDto } from './dto/manual-import.dto';
 import { ImportResponseDto } from './dto/import-response.dto';
 import { IntegrationToken } from '../common/decorators/integration-token.decorator';
@@ -16,28 +16,28 @@ type AuthenticatedIntegration = { id: string; userId: string; accountId: string 
 export class ImportsController {
   constructor(private importsService: ImportsService) {}
 
-  @Post('shortcut')
+  @Post('notification')
   @Public()
   @UseGuards(IntegrationAuthGuard)
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Import transaction from iOS Shortcut' })
+  @ApiOperation({ summary: 'Import transaction from a bank notification message' })
   @ApiResponse({ status: 200, type: ImportResponseDto })
   @ApiResponse({ status: 400, description: 'Integration not linked to an account' })
   @ApiResponse({ status: 401, description: 'Invalid integration token' })
-  @ApiResponse({ status: 403, description: 'Token is not a SHORTCUT integration' })
-  async importFromShortcut(
+  @ApiResponse({ status: 403, description: 'Token is not a NOTIFICATION integration' })
+  async importFromNotification(
     @IntegrationToken() integration: AuthenticatedIntegration,
-    @Body() dto: ShortcutImportDto,
+    @Body() dto: NotificationImportDto,
   ): Promise<ImportResponseDto> {
-    if (integration.type !== IntegrationType.SHORTCUT) {
-      throw new ForbiddenException('Shortcut imports require a SHORTCUT integration token');
+    if (integration.type !== IntegrationType.NOTIFICATION) {
+      throw new ForbiddenException('Notification imports require a NOTIFICATION integration token');
     }
     if (!integration.accountId) {
       throw new BadRequestException('Integration must be linked to an account');
     }
 
-    return this.importsService.importFromShortcut(
+    return this.importsService.importFromNotification(
       integration.userId,
       integration.id,
       integration.accountId,
