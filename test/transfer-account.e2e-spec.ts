@@ -1,6 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
-import { getSharedTestApp, getAccessToken, closeSharedTestApp } from './shared-test.module';
+import { getSharedTestApp, getAccessToken, closeSharedTestApp, createTestAccount, deactivateAccounts } from './shared-test.module';
 
 describe('Transfer Account Flow (e2e)', () => {
   let app: INestApplication;
@@ -11,21 +11,23 @@ describe('Transfer Account Flow (e2e)', () => {
   let toExpectedBalance: number;
   let movementId: string;
 
-  // Account IDs from context
-  const fromAccountId = 'revolut-account';
-  const toAccountId = 'activobank-account';
+  // Own accounts: other suites running in parallel must not change these balances
+  let fromAccountId: string;
+  let toAccountId: string;
   const transferAmount = 50;
 
   beforeAll(async () => {
     app = await getSharedTestApp();
     accessToken = getAccessToken();
+    [fromAccountId, toAccountId] = await Promise.all([createTestAccount('Transfer from'), createTestAccount('Transfer to')]);
   });
 
   afterAll(async () => {
+    await deactivateAccounts([fromAccountId, toAccountId]);
     await closeSharedTestApp();
   });
 
-  describe('Transfer: Revolut -> ActivoBank', () => {
+  describe('Transfer: source -> destination', () => {
     it('should login with seed user and get access token', () => {
       expect(accessToken).toBeDefined();
       expect(typeof accessToken).toBe('string');
@@ -44,15 +46,15 @@ describe('Transfer Account Flow (e2e)', () => {
       fromExpectedBalance = fromInitialBalance;
       toExpectedBalance = toInitialBalance;
 
-      console.log('✅ Initial from account (Revolut):', JSON.stringify(fromRes.body, null, 2));
-      console.log('✅ Initial to account (ActivoBank):', JSON.stringify(toRes.body, null, 2));
+      console.log('✅ Initial from account:', JSON.stringify(fromRes.body, null, 2));
+      console.log('✅ Initial to account:', JSON.stringify(toRes.body, null, 2));
       console.log('📊 Stored initial balances - From:', fromInitialBalance, '| To:', toInitialBalance);
 
       expect(fromRes.body.balance).toBeDefined();
       expect(toRes.body.balance).toBeDefined();
     });
 
-    it('should create a transfer of 50 EUR from Revolut to ActivoBank', async () => {
+    it('should create a transfer of 50 EUR from source to destination', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/v1/transfers')
         .set('Authorization', `Bearer ${accessToken}`)
@@ -78,18 +80,18 @@ describe('Transfer Account Flow (e2e)', () => {
       console.log('📊 Expected balances after transfer - From:', fromExpectedBalance, '| To:', toExpectedBalance);
     });
 
-    it('should verify Revolut balance decreased by transfer amount', async () => {
+    it('should verify source balance decreased by transfer amount', async () => {
       const res = await request(app.getHttpServer()).get(`/api/v1/accounts/${fromAccountId}`).set('Authorization', `Bearer ${accessToken}`).expect(200);
 
-      console.log('✅ Revolut balance after transfer:', JSON.stringify(res.body, null, 2));
+      console.log('✅ Source balance after transfer:', JSON.stringify(res.body, null, 2));
       console.log('📊 Expected:', fromExpectedBalance, '| Received:', res.body.balance);
       expect(res.body.balance).toBe(fromExpectedBalance);
     });
 
-    it('should verify ActivoBank balance increased by transfer amount', async () => {
+    it('should verify destination balance increased by transfer amount', async () => {
       const res = await request(app.getHttpServer()).get(`/api/v1/accounts/${toAccountId}`).set('Authorization', `Bearer ${accessToken}`).expect(200);
 
-      console.log('✅ ActivoBank balance after transfer:', JSON.stringify(res.body, null, 2));
+      console.log('✅ Destination balance after transfer:', JSON.stringify(res.body, null, 2));
       console.log('📊 Expected:', toExpectedBalance, '| Received:', res.body.balance);
       expect(res.body.balance).toBe(toExpectedBalance);
     });

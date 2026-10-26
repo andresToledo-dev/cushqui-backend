@@ -24,7 +24,7 @@ npm run start:dev     # desarrollo con hot reload (BD dev)
 npm run build         # build de producción
 
 # Tests
-npm test              # tests unitarios (121 tests, sin BD)
+npm test              # tests unitarios (125 tests, sin BD)
 npm run test:e2e      # tests e2e (BD dev + seed; abortan si apuntan a prod)
 npm run test:cov      # coverage
 
@@ -85,6 +85,7 @@ common/         # Guards, decorators, filters
 
 - Usa **token separado** (`Authorization: Bearer <INTEGRATION_TOKEN>`), NO JWT
 - Crear integración vía `POST /api/v1/integrations` → retorna `plainToken` **una sola vez**
+- El token (32 bytes aleatorios) se guarda como **SHA256** en `tokenHash` (único): `IntegrationAuthGuard` lo busca con una sola consulta por índice. Antes era bcrypt y el guard comparaba contra todas las integraciones activas (~0,25 s cada una: con 15 integraciones, 4 s por import). Un token aleatorio no necesita un hash lento. Utilidades en `src/integrations/integration-token.util.ts`
 - Deduplicación vía **SHA256 fingerprint** en `ImportEvent` (único por user+account+source+amount+merchant+date+externalId)
 - Retorna `{ created: true }` o `{ created: false, duplicate: true, transactionId }`
 - **Cada token solo vale para su endpoint**: `NOTIFICATION` → `POST /imports/notification` (parsea el mensaje; la integración debe tener cuenta asociada), `MANUAL` → `POST /imports/manual`. Token de otro tipo → 403. Ambos tipos los usa el atajo de iOS: `NOTIFICATION` envía el texto de la notificación del banco (antes se llamaba `SHORTCUT`)
@@ -142,7 +143,7 @@ Guía paso a paso (Supabase, GitHub, Vercel): `DEPLOY.md`.
 - Prisma: `transactionOptions { maxWait: 10s, timeout: 20s }` en `PrismaService` (los 2 s por defecto fallaban con los picos del pooler)
 - **Nunca** escribir contraseñas, tokens ni URLs reales en archivos versionados (este incluido): solo en `.env` / `.env.production` (ignorados), Vercel y GitHub Secrets
 
-Variables (ver `.env.example`): `DATABASE_URL`, `DIRECT_URL`, `JWT_SECRET`, `JWT_REFRESH_SECRET`, `JWT_EXPIRES_IN`, `JWT_REFRESH_EXPIRES_IN`, `PORT`, `NODE_ENV`, `API_PREFIX`, `CORS_ORIGINS`, `PROD_DB_REF` (solo local: project-ref de prod, protege los e2e), `NOTIFICATION_INTEGRATION_TOKEN` (solo local, opcional: token reutilizado por los e2e).
+Variables (ver `.env.example`): `DATABASE_URL`, `DIRECT_URL`, `JWT_SECRET`, `JWT_REFRESH_SECRET`, `JWT_EXPIRES_IN`, `JWT_REFRESH_EXPIRES_IN`, `PORT`, `NODE_ENV`, `API_PREFIX`, `CORS_ORIGINS`, `PROD_DB_REF` (solo local: project-ref de prod, protege los e2e).
 
 ## Importación desde Excel (`scripts/import-transactions.ts`)
 
@@ -159,11 +160,13 @@ Variables (ver `.env.example`): `DATABASE_URL`, `DIRECT_URL`, `JWT_SECRET`, `JWT
 
 | Tipo Test | Comando            | Notas                                               |
 | --------- | ------------------ | --------------------------------------------------- |
-| Unit      | `npm test`         | 121 tests, no requiere BD (los corre la CI en cada PR) |
+| Unit      | `npm test`         | 125 tests, no requiere BD (los corre la CI en cada PR) |
 | E2E       | `npm run test:e2e` | BD dev con seed; abortan si `DATABASE_URL` contiene `PROD_DB_REF` |
 | Coverage  | `npm run test:cov` | Salida en `coverage/`                               |
 
 **Los tests e2e crean datos reales** y dependen del usuario/cuentas del seed (`npm run prisma:seed` en dev antes de ejecutarlos; el usuario seed es ADMIN para crear invitaciones con `createInvitation()` de `test/shared-test.module.ts`). Para dejar la BD dev solo con tus datos: `npm run db:clean:dev:execute <tu email>` (borra el usuario seed y los creados por los tests).
+
+**Aislamiento en los e2e** (corren en paralelo): una suite que comprueba saldos crea **su propia cuenta** con `createTestAccount()` y la desactiva en `afterAll` con `deactivateAccounts()`; nunca usa las cuentas del seed (`revolut-account`…), porque otra suite podría cambiar el saldo entre la lectura y la comprobación. Las integraciones que crea las borra con `deleteIntegrations()`. Helpers en `test/shared-test.module.ts`
 
 ## Problemas Comunes
 

@@ -1,6 +1,6 @@
 import { Injectable, CanActivate, ExecutionContext, UnauthorizedException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
-import * as bcrypt from "bcrypt";
+import { hashIntegrationToken } from "../../integrations/integration-token.util";
 
 @Injectable()
 export class IntegrationAuthGuard implements CanActivate {
@@ -15,25 +15,20 @@ export class IntegrationAuthGuard implements CanActivate {
     }
 
     const token = authHeader.substring(7);
-    const integrations = await this.prisma.integration.findMany({
-      where: {
-        isActive: true,
-      },
+    const integration = await this.prisma.integration.findUnique({
+      where: { tokenHash: hashIntegrationToken(token) },
       include: {
         user: true,
         account: true,
       },
     });
 
-    for (const integration of integrations) {
-      const isValid = await bcrypt.compare(token, integration.tokenHash);
-      if (isValid) {
-        request.user = integration.user;
-        request.integration = integration;
-        return true;
-      }
+    if (!integration || !integration.isActive) {
+      throw new UnauthorizedException("Invalid integration token");
     }
 
-    throw new UnauthorizedException("Invalid integration token");
+    request.user = integration.user;
+    request.integration = integration;
+    return true;
   }
 }

@@ -4,7 +4,7 @@
 - **Tests**: unitarios 121/121 ✅ · e2e 94/94 ✅ (`--runInBand`, 2026-10-21). En dev conviven `test@roto.com` y el seed `test@cushqui.local` (ADMIN) + usuarios de e2e
 - Repo en GitHub (`main` producción en Vercel región `dub1`, `dev` por defecto). Producción: `https://cushqui-backend.vercel.app`
 - Importación Excel en dev completada (`test@roto.com`, luego con datos de prueba). **Carga en producción** (`--prod`, fusionado en `main`): pendiente de que el usuario se registre en la app y lance `npm run import:prod:execute` (~40 min estimados). Tras fusionar la rama de invitaciones, antes: `npm run invite:admin:prod <email>` y registrarse con ese código
-- **Rama `feature/invitation-registration`** (sin commit): registro solo con código de invitación, `User.role` (USER/ADMIN), módulo `invitations/`, `scripts/invitations.ts`. Migración `…_invitations` **aplicada en dev**. Frontend: añadir campo de código en `/registro` y pantalla de admin. `NOTIFICATION` (antes `SHORTCUT`) ya fusionado: al desplegar cambiar la URL del atajo de iOS
+- Invitaciones (registro con código, `User.role`) y `NOTIFICATION` ya fusionados en `main`. **Rama `fix/integration-token-lookup`** (sin commit): token de integración en SHA256 con índice único (antes bcrypt contra todas: ~4 s por import con 15 integraciones). Migración `…_integration_token_sha256` **aplicada en dev**: las integraciones creadas antes no valen (regenerar token)
 - Pendiente: decidir la estrategia de e2e (propuesta: BD de test aparte + usuario propio por suite)
 - `Task1.md` eliminado del historial; quedan `refs/original` locales y copia en `%TEMP%\cushqui-history-backup-20261014-191722\` (limpieza pendiente, ofrecida)
 
@@ -25,6 +25,7 @@
 | Import manual: tipo explícito (`type`), nuevo `IntegrationType.MANUAL`, cuenta por `accountId` o `accountName` | Elegido por el usuario. Cada token solo vale para su endpoint (403). Sin `externalId` no se deduplica. |
 | `NOTIFICATION` en lugar de `SHORTCUT` | Pedido del usuario: los dos tipos los usa el atajo; el nombre describe lo que envía (texto de la notificación). |
 | Sin categorías globales; categorías base por usuario al registrarse | Pedido del usuario: cada uno edita/borra las suyas. Los nombres coinciden con el mapeo del Excel: la importación las reutiliza. |
+| Token de integración en SHA256 (no bcrypt) | Es aleatorio de 256 bits: no necesita hash lento y permite buscarlo por índice. Tokens antiguos de prod sin uso (confirmado por el usuario). |
 | Registro por invitación: códigos en BD (hash SHA256, un uso, 7 días, email opcional), admin por `User.role` | Elegido por el usuario. Código validado antes que el email (no revela emails); ADMIN solo vía script (bootstrap). |
 | Editar transacción: se valida el resultado final (tipo + categoría) y el saldo se revierte y reaplica | Pedido del usuario: gasto 20 → ingreso 20 lleva el saldo de 60 a 100. |
 
@@ -33,7 +34,7 @@
 - **Nunca `vercel build` en el proyecto local**: corre `npm ci` y borró `node_modules`. Si hace falta, en una copia (`git archive` a `%TEMP%`).
 - Reglas de saldo/movimientos, ambientes, importación, defaults en DTOs y migraciones → en `AGENTS.md`.
 - Antes de cada commit: buscar secretos (`git grep`). `scripts/imports/` y `scripts/import.env` nunca se versionan.
-- `npm run test:e2e` en paralelo puede fallar en saldos (suites comparten cuentas del seed); con `--runInBand` pasan. No es un fallo del código.
+- e2e que comprueban saldos: cada suite crea su propia cuenta (`createTestAccount`) y la desactiva al final; nunca usar las cuentas del seed (en paralelo se pisaban los saldos). Las integraciones creadas se borran en `afterAll` (`deleteIntegrations`).
 - Variables de Vercel: revisar nombre ≠ valor (`API_PREFIX` tenía el valor `API_PREFIX` → todas las rutas 404).
 - `POST /auth/refresh`: el DTO exigía UUID y el token es JWT (toda renovación daba 400 y la app cerraba sesión a los 15 min). Corregido con `@IsJWT()` en rama `fix/refresh-token-jwt`
 

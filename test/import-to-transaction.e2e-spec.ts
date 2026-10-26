@@ -1,12 +1,13 @@
 import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
-import { getSharedTestApp, getAccessToken, closeSharedTestApp } from './shared-test.module';
+import { getSharedTestApp, getAccessToken, closeSharedTestApp, deleteIntegrations, createTestAccount, deactivateAccounts } from './shared-test.module';
 
 describe('Import to Transaction Flow (e2e)', () => {
   let app: INestApplication;
   let accessToken: string;
   let integrationId: string;
   let integrationToken: string;
+  let accountId: string; // own account: other suites must not change its balance
 
   // Unique identifiers for this test run
   const testRunId = Date.now();
@@ -17,9 +18,12 @@ describe('Import to Transaction Flow (e2e)', () => {
   beforeAll(async () => {
     app = await getSharedTestApp();
     accessToken = getAccessToken();
+    accountId = await createTestAccount('Import to transaction');
   });
 
   afterAll(async () => {
+    await deleteIntegrations([integrationId]);
+    await deactivateAccounts([accountId]);
     await closeSharedTestApp();
   });
 
@@ -52,16 +56,16 @@ describe('Import to Transaction Flow (e2e)', () => {
       console.log('✅ POST /integrations response:', JSON.stringify(res.body, null, 2));
     });
 
-    it('should link the integration to revolut-account', async () => {
+    it('should link the integration to the test account', async () => {
       const res = await request(app.getHttpServer())
         .patch(`/api/v1/integrations/${integrationId}`)
         .set('Authorization', `Bearer ${accessToken}`)
         .send({
-          accountId: 'revolut-account',
+          accountId,
         })
         .expect(200);
 
-      expect(res.body.accountId).toBe('revolut-account');
+      expect(res.body.accountId).toBe(accountId);
       console.log('✅ PATCH /integrations/:id response:', JSON.stringify(res.body, null, 2));
     });
 
