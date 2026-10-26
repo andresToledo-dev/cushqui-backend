@@ -1,6 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
-import { getSharedTestApp, getAccessToken, closeSharedTestApp } from './shared-test.module';
+import { getSharedTestApp, getAccessToken, closeSharedTestApp, createInvitation } from './shared-test.module';
 import { DEFAULT_CATEGORIES } from '../src/categories/default-categories';
 
 describe('Auth Flow (e2e)', () => {
@@ -60,14 +60,16 @@ describe('Auth Flow (e2e)', () => {
   });
 
   describe('Auth endpoints (public)', () => {
-    it('should register a new user with unique email', () => {
+    it('should register a new user with unique email', async () => {
       const uniqueEmail = `flow-test-${Date.now()}@example.com`;
+      const { code } = await createInvitation();
       return request(app.getHttpServer())
         .post('/api/v1/auth/register')
         .send({
           email: uniqueEmail,
           password: 'Password123!',
           name: 'Flow Test User',
+          invitationCode: code,
         })
         .expect(201)
         .expect((res) => {
@@ -77,9 +79,10 @@ describe('Auth Flow (e2e)', () => {
     });
 
     it('should give a new user the default categories, owned by that user', async () => {
+      const { code } = await createInvitation();
       const registerRes = await request(app.getHttpServer())
         .post('/api/v1/auth/register')
-        .send({ email: `flow-test-categories-${Date.now()}@example.com`, password: 'Password123!', name: 'Flow Test User' })
+        .send({ email: `flow-test-categories-${Date.now()}@example.com`, password: 'Password123!', name: 'Flow Test User', invitationCode: code })
         .expect(201);
 
       const [meRes, categoriesRes] = await Promise.all([

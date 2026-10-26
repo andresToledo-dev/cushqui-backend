@@ -129,11 +129,23 @@ npm run test:cov
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/v1/auth/register` | Register new user |
+| POST | `/api/v1/auth/register` | Register new user (requires `invitationCode`) |
 | POST | `/api/v1/auth/login` | Login user |
 | POST | `/api/v1/auth/refresh` | Refresh access token |
 | POST | `/api/v1/auth/logout` | Logout user |
 | GET | `/api/v1/auth/me` | Get current user |
+
+Registration is invitation-only: an ADMIN creates a code and the new user sends it as `invitationCode`.
+
+### Invitations (ADMIN only)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v1/invitations` | Create an invitation code (`email?`, `expiresInDays?`); the code is returned only once |
+| GET | `/api/v1/invitations` | List invitations with status (PENDING, USED, EXPIRED, REVOKED) |
+| DELETE | `/api/v1/invitations/:id` | Revoke an unused invitation |
+
+The first ADMIN is created from the command line: `npm run invite:admin:dev [email]` (dev) or `npm run invite:admin:prod [email]` (production), then register with that code.
 
 ### Accounts
 

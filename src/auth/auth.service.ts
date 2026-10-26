@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ConflictException, BadRequestException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
@@ -9,6 +9,9 @@ import { TokenResponseDto } from './dto/token-response.dto';
 import { UserResponseDto } from './dto/user-response.dto';
 import { ConfigService } from '@nestjs/config';
 import { createDefaultCategories } from '../categories/default-categories';
+import { hashInvitationCode, invitationStatus } from '../invitations/invitation-code.util';
+
+const INVALID_INVITATION = 'Invalid or expired invitation code';
 
 @Injectable()
 export class AuthService {
@@ -18,7 +21,23 @@ export class AuthService {
     private configService: ConfigService,
   ) {}
 
+  /**
+   * Registration is invitation-only. The code is checked before the email so that, without a valid code,
+   * nobody can find out which emails are registered.
+   */
   async register(dto: RegisterDto): Promise<TokenResponseDto> {
+    const invitation = await this.prisma.invitation.findUnique({
+      where: { codeHash: hashInvitationCode(dto.invitationCode) },
+    });
+
+    if (
+      !invitation ||
+      invitationStatus(invitation) !== 'PENDING' ||
+      (invitation.email && invitation.email !== dto.email.trim().toLowerCase())
+    ) {
+      throw new BadRequestException(INVALID_INVITATION);
+    }
+
     const existingUser = await this.prisma.user.findUnique({
       where: { email: dto.email },
     });
@@ -36,9 +55,20 @@ export class AuthService {
           email: dto.email,
           passwordHash,
           name: dto.name,
+          role: invitation.role,
         },
       });
       await createDefaultCategories(tx, created.id);
+
+      // Consume the code atomically: if a parallel registration used it first, everything is rolled back
+      const consumed = await tx.invitation.updateMany({
+        where: { id: invitation.id, usedAt: null, revokedAt: null, expiresAt: { gt: new Date() } },
+        data: { usedAt: new Date(), usedById: created.id },
+      });
+      if (consumed.count === 0) {
+        throw new BadRequestException(INVALID_INVITATION);
+      }
+
       return created;
     });
 
