@@ -1,6 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
-import { getSharedTestApp, getAccessToken, closeSharedTestApp, findCategory } from './shared-test.module';
+import { getSharedTestApp, getAccessToken, closeSharedTestApp, findCategory, createTestAccount, deactivateAccounts } from './shared-test.module';
 
 describe('Transaction Manual Flow (e2e)', () => {
   let app: INestApplication;
@@ -12,13 +12,14 @@ describe('Transaction Manual Flow (e2e)', () => {
   // INCOME category of the seed user ("Salario") and an "E2E" subcategory under it, created once if missing
   let categoryId: string;
   let subcategoryId: string;
-  const accountId = 'revolut-account';
+  let accountId: string; // own account: other suites must not change its balance
   const incomeAmount = 10;
   const editedAmount = 5;
 
   beforeAll(async () => {
     app = await getSharedTestApp();
     accessToken = getAccessToken();
+    accountId = await createTestAccount('Transaction manual');
 
     const salario = await findCategory('Salario', 'INCOME');
     categoryId = salario.id;
@@ -34,6 +35,7 @@ describe('Transaction Manual Flow (e2e)', () => {
   });
 
   afterAll(async () => {
+    await deactivateAccounts([accountId]);
     await closeSharedTestApp();
   });
 

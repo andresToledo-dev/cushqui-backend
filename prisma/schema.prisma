@@ -232,7 +232,8 @@ model Integration {
   account    Account?        @relation(fields: [accountId], references: [id], onDelete: SetNull)
   name       String
   type       IntegrationType
-  tokenHash  String
+  /// SHA256 of the token (32 random bytes, shown once): looked up directly by the integration guard
+  tokenHash  String          @unique
   isActive   Boolean         @default(true)
   lastUsedAt DateTime?
   createdAt  DateTime        @default(now())
@@ -241,7 +242,6 @@ model Integration {
   importEvents ImportEvent[]
 
   @@index([userId])
-  @@index([tokenHash])
   @@map("integrations")
 }
 

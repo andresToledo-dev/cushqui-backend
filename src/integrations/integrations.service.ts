@@ -2,8 +2,7 @@ import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/commo
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateIntegrationDto } from './dto/create-integration.dto';
 import { IntegrationResponseDto } from './dto/integration-response.dto';
-import * as bcrypt from 'bcrypt';
-import * as crypto from 'crypto';
+import { generateIntegrationToken, hashIntegrationToken } from './integration-token.util';
 
 /** Número de import events recibidos con cada integración. */
 const WITH_IMPORT_COUNT = { _count: { select: { importEvents: true } } } as const;
@@ -38,8 +37,8 @@ export class IntegrationsService {
       }
     }
 
-    const plainToken = crypto.randomBytes(32).toString('hex');
-    const tokenHash = await bcrypt.hash(plainToken, 12);
+    const plainToken = generateIntegrationToken();
+    const tokenHash = hashIntegrationToken(plainToken);
 
     const integration = await this.prisma.integration.create({
       data: {
@@ -131,8 +130,8 @@ export class IntegrationsService {
       throw new NotFoundException('Integration not found');
     }
 
-    const plainToken = crypto.randomBytes(32).toString('hex');
-    const tokenHash = await bcrypt.hash(plainToken, 12);
+    const plainToken = generateIntegrationToken();
+    const tokenHash = hashIntegrationToken(plainToken);
 
     const updated = await this.prisma.integration.update({
       where: { id },
