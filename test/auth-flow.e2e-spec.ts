@@ -1,6 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
-import { getSharedTestApp, getAccessToken, closeSharedTestApp } from './shared-test.module';
+import { getSharedTestApp, getAccessToken, closeSharedTestApp, createInvitation } from './shared-test.module';
+import { DEFAULT_CATEGORIES } from '../src/categories/default-categories';
 
 describe('Auth Flow (e2e)', () => {
   let app: INestApplication;
@@ -59,20 +60,44 @@ describe('Auth Flow (e2e)', () => {
   });
 
   describe('Auth endpoints (public)', () => {
-    it('should register a new user with unique email', () => {
+    it('should register a new user with unique email', async () => {
       const uniqueEmail = `flow-test-${Date.now()}@example.com`;
+      const { code } = await createInvitation();
       return request(app.getHttpServer())
         .post('/api/v1/auth/register')
         .send({
           email: uniqueEmail,
           password: 'Password123!',
           name: 'Flow Test User',
+          invitationCode: code,
         })
         .expect(201)
         .expect((res) => {
           expect(res.body).toHaveProperty('accessToken');
           expect(res.body).toHaveProperty('refreshToken');
         });
+    });
+
+    it('should give a new user the default categories, owned by that user', async () => {
+      const { code } = await createInvitation();
+      const registerRes = await request(app.getHttpServer())
+        .post('/api/v1/auth/register')
+        .send({ email: `flow-test-categories-${Date.now()}@example.com`, password: 'Password123!', name: 'Flow Test User', invitationCode: code })
+        .expect(201);
+
+      const [meRes, categoriesRes] = await Promise.all([
+        request(app.getHttpServer()).get('/api/v1/auth/me').set('Authorization', `Bearer ${registerRes.body.accessToken}`).expect(200),
+        request(app.getHttpServer()).get('/api/v1/categories').set('Authorization', `Bearer ${registerRes.body.accessToken}`).expect(200),
+      ]);
+
+      const names = (type: string) => categoriesRes.body.filter((c: any) => c.type === type).map((c: any) => c.name).sort();
+      expect(names('EXPENSE')).toEqual(Object.keys(DEFAULT_CATEGORIES.EXPENSE).sort());
+      expect(names('INCOME')).toEqual(Object.keys(DEFAULT_CATEGORIES.INCOME).sort());
+      expect(categoriesRes.body.every((c: any) => c.userId === meRes.body.id)).toBe(true);
+
+      const prestamos = categoriesRes.body.find((c: any) => c.name === 'Prestamos');
+      expect(prestamos.subcategories.map((s: any) => s.name)).toEqual(['Persona 1', 'Persona 2']);
+      expect(prestamos.subcategories.every((s: any) => s.userId === meRes.body.id && s.type === 'EXPENSE')).toBe(true);
     });
 
     it('should login with valid credentials', () => {

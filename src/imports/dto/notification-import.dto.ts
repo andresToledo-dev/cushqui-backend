@@ -1,7 +1,7 @@
 import { IsString, IsOptional, IsDateString, MaxLength } from "class-validator";
 import { ApiProperty } from "@nestjs/swagger";
 
-export class ShortcutImportDto {
+export class NotificationImportDto {
   @ApiProperty({ example: "Has enviado 15.50€ a Juan Pablo. Llegará en segundos" })
   @IsString()
   @MaxLength(500)

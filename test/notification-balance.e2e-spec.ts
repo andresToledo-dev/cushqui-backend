@@ -1,8 +1,8 @@
 import { INestApplication } from "@nestjs/common";
 import * as request from "supertest";
-import { getSharedTestApp, getAccessToken, closeSharedTestApp } from "./shared-test.module";
+import { getSharedTestApp, getAccessToken, closeSharedTestApp, findCategory } from "./shared-test.module";
 
-describe("Shortcut Balance Flow (e2e)", () => {
+describe("Notification Balance Flow (e2e)", () => {
   let app: INestApplication;
   let accessToken: string;
   let integrationToken: string;
@@ -11,20 +11,21 @@ describe("Shortcut Balance Flow (e2e)", () => {
   let importedTransactionId: string;
   const expenseAmount = 25.5;
 
-  // Category ID from context: cat-loans
-  const categoryId = "cat-loans";
+  // Default "Prestamos" category of the seed user (looked up by name: its id is random)
+  let categoryId: string;
   const accountId = "revolut-account";
 
   beforeAll(async () => {
     app = await getSharedTestApp();
     accessToken = getAccessToken();
+    categoryId = (await findCategory("Prestamos", "EXPENSE")).id;
   });
 
   afterAll(async () => {
     await closeSharedTestApp();
   });
 
-  describe("Shortcut import: create unclassified -> classify", () => {
+  describe("Notification import: create unclassified -> classify", () => {
     it("should login with seed user and get access token", () => {
       expect(accessToken).toBeDefined();
       expect(typeof accessToken).toBe("string");
@@ -33,20 +34,20 @@ describe("Shortcut Balance Flow (e2e)", () => {
     });
 
     it("should get or create integration and obtain token", async () => {
-      // Reuse SHORTCUT_INTEGRATION_TOKEN from .env if set, otherwise create a new integration
-      const envToken = process.env.SHORTCUT_INTEGRATION_TOKEN;
+      // Reuse NOTIFICATION_INTEGRATION_TOKEN from .env if set, otherwise create a new integration
+      const envToken = process.env.NOTIFICATION_INTEGRATION_TOKEN;
 
       if (envToken) {
         integrationToken = envToken;
-        console.log("✅ Using SHORTCUT_INTEGRATION_TOKEN from .env");
+        console.log("✅ Using NOTIFICATION_INTEGRATION_TOKEN from .env");
       } else {
         // Create a new integration for testing
         const res = await request(app.getHttpServer())
           .post("/api/v1/integrations")
           .set("Authorization", `Bearer ${accessToken}`)
           .send({
-            name: "shortcut_balance_test",
-            type: "SHORTCUT",
+            name: "notification_balance_test",
+            type: "NOTIFICATION",
             accountId,
           })
           .expect(201);
@@ -69,9 +70,9 @@ describe("Shortcut Balance Flow (e2e)", () => {
       expect(res.body.balance).toBeDefined();
     });
 
-    it("should create an UNCLASSIFIED transaction via /imports/shortcut (EXPENSE)", async () => {
+    it("should create an UNCLASSIFIED transaction via /imports/notification (EXPENSE)", async () => {
       const res = await request(app.getHttpServer())
-        .post("/api/v1/imports/shortcut")
+        .post("/api/v1/imports/notification")
         .set("Authorization", `Bearer ${integrationToken}`)
         .send({
           message: `Has enviado ${expenseAmount}€ a Supermercado. Llegará en segundos`,
@@ -87,7 +88,7 @@ describe("Shortcut Balance Flow (e2e)", () => {
       // EXPENSE subtracts from balance
       expectedBalance -= expenseAmount;
 
-      console.log("✅ POST /imports/shortcut (UNCLASSIFIED EXPENSE) response:", JSON.stringify(res.body, null, 2));
+      console.log("✅ POST /imports/notification (UNCLASSIFIED EXPENSE) response:", JSON.stringify(res.body, null, 2));
       console.log("📊 Expected balance after import:", expectedBalance);
     });
 
@@ -112,7 +113,7 @@ describe("Shortcut Balance Flow (e2e)", () => {
       console.log("✅ Verified UNCLASSIFIED transaction:", JSON.stringify(importedTx, null, 2));
     });
 
-    it("should classify the transaction using cat-loans category", async () => {
+    it("should classify the transaction using the Prestamos category", async () => {
       const res = await request(app.getHttpServer()).get("/api/v1/transactions").set("Authorization", `Bearer ${accessToken}`).query({ limit: 5 }).expect(200);
 
       const importedTx = res.body.data.find((tx: any) => tx.source === "REVOLUT" && tx.status === "UNCLASSIFIED" && tx.amount === expenseAmount);

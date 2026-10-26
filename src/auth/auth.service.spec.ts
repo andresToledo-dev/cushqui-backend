@@ -1,12 +1,15 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { UnauthorizedException, ConflictException } from '@nestjs/common';
+import { UnauthorizedException, ConflictException, BadRequestException } from '@nestjs/common';
+import { UserRole } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { AuthService } from './auth.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { DEFAULT_CATEGORIES, lightenColor } from '../categories/default-categories';
+import { hashInvitationCode } from '../invitations/invitation-code.util';
 
 jest.mock('bcrypt');
 
@@ -16,11 +19,20 @@ describe('AuthService', () => {
   let jwtService: JwtService;
   let configService: ConfigService;
 
-  const mockPrisma = {
+  const mockPrisma: any = {
     user: {
       findUnique: jest.fn(),
       create: jest.fn(),
     },
+    category: {
+      createMany: jest.fn(),
+    },
+    invitation: {
+      findUnique: jest.fn(),
+      updateMany: jest.fn(),
+    },
+    // Register runs inside a transaction: the callback receives the same mock
+    $transaction: jest.fn((callback) => callback(mockPrisma)),
   };
 
   const mockJwtService = {
@@ -59,53 +71,130 @@ describe('AuthService', () => {
   });
 
   describe('register', () => {
-    it('should create a new user and return tokens', async () => {
-      const dto: RegisterDto = {
-        email: 'test@example.com',
-        password: 'Password123!',
-        name: 'Test User',
-      };
+    const DAY = 24 * 60 * 60 * 1000;
+    const code = 'K7QF-M2XH-9RTB';
+    const baseDto: RegisterDto = { email: 'new@example.com', password: 'Password123!', name: 'New', invitationCode: code };
+    const pendingInvitation = (overrides: Record<string, unknown> = {}) => ({
+      id: 'invitation-id',
+      codeHash: hashInvitationCode(code),
+      email: null,
+      role: UserRole.USER,
+      expiresAt: new Date(Date.now() + DAY),
+      usedAt: null,
+      usedById: null,
+      revokedAt: null,
+      ...overrides,
+    });
 
+    beforeEach(() => {
+      mockPrisma.invitation.findUnique.mockResolvedValue(pendingInvitation());
+      mockPrisma.invitation.updateMany.mockResolvedValue({ count: 1 });
       mockPrisma.user.findUnique.mockResolvedValue(null);
       (bcrypt.hash as jest.Mock).mockResolvedValue('hashed-password');
-      mockPrisma.user.create.mockResolvedValue({
-        id: 'user-id',
-        email: dto.email,
-        passwordHash: 'hashed-password',
-        name: dto.name,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
-      mockJwtService.sign.mockImplementation((payload, options) => {
-        if (options?.expiresIn === '15m') return 'access-token';
-        return 'refresh-token';
-      });
+      mockPrisma.user.create.mockResolvedValue({ id: 'user-id' });
+      mockJwtService.sign.mockImplementation((payload, options) => (options?.expiresIn === '15m' ? 'access-token' : 'refresh-token'));
+    });
 
-      const result = await service.register(dto);
+    it('should create a new user with a valid invitation and return tokens', async () => {
+      const result = await service.register(baseDto);
 
-      expect(result).toEqual({
-        accessToken: 'access-token',
-        refreshToken: 'refresh-token',
-      });
+      expect(result).toEqual({ accessToken: 'access-token', refreshToken: 'refresh-token' });
       expect(mockPrisma.user.create).toHaveBeenCalledWith({
-        data: {
-          email: dto.email,
-          passwordHash: 'hashed-password',
-          name: dto.name,
-        },
+        data: { email: baseDto.email, passwordHash: 'hashed-password', name: baseDto.name, role: UserRole.USER },
       });
     });
 
-    it('should throw ConflictException if email already exists', async () => {
-      const dto: RegisterDto = {
-        email: 'test@example.com',
-        password: 'Password123!',
-        name: 'Test User',
-      };
+    it('should look the code up by its hash, ignoring case and dashes', async () => {
+      await service.register({ ...baseDto, invitationCode: 'k7qfm2xh9rtb' });
 
+      expect(mockPrisma.invitation.findUnique).toHaveBeenCalledWith({ where: { codeHash: hashInvitationCode(code) } });
+      expect(mockPrisma.user.create).toHaveBeenCalled();
+    });
+
+    it('should consume the invitation in the same transaction, only if still unused', async () => {
+      await service.register(baseDto);
+
+      expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.invitation.updateMany).toHaveBeenCalledWith({
+        where: { id: 'invitation-id', usedAt: null, revokedAt: null, expiresAt: { gt: expect.any(Date) } },
+        data: { usedAt: expect.any(Date), usedById: 'user-id' },
+      });
+    });
+
+    it('should give the user the role of the invitation', async () => {
+      mockPrisma.invitation.findUnique.mockResolvedValue(pendingInvitation({ role: UserRole.ADMIN }));
+
+      await service.register(baseDto);
+
+      expect(mockPrisma.user.create.mock.calls[0][0].data.role).toBe(UserRole.ADMIN);
+    });
+
+    it('should accept an invitation issued for the same email, case-insensitively', async () => {
+      mockPrisma.invitation.findUnique.mockResolvedValue(pendingInvitation({ email: 'new@example.com' }));
+
+      await service.register({ ...baseDto, email: 'New@Example.com' });
+
+      expect(mockPrisma.user.create).toHaveBeenCalled();
+    });
+
+    it.each([
+      ['does not exist', null],
+      ['was already used', pendingInvitation({ usedAt: new Date(), usedById: 'other-user' })],
+      ['was revoked', pendingInvitation({ revokedAt: new Date() })],
+      ['has expired', pendingInvitation({ expiresAt: new Date(Date.now() - 1000) })],
+      ['was issued for another email', pendingInvitation({ email: 'someone@example.com' })],
+    ])('should reject with 400 when the code %s, before checking the email', async (_case, invitation) => {
+      mockPrisma.invitation.findUnique.mockResolvedValue(invitation);
+
+      await expect(service.register(baseDto)).rejects.toThrow(new BadRequestException('Invalid or expired invitation code'));
+      expect(mockPrisma.user.findUnique).not.toHaveBeenCalled();
+      expect(mockPrisma.user.create).not.toHaveBeenCalled();
+    });
+
+    it('should roll back when a parallel registration consumed the code first', async () => {
+      mockPrisma.invitation.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(service.register(baseDto)).rejects.toThrow(BadRequestException);
+      expect(mockJwtService.sign).not.toHaveBeenCalled();
+    });
+
+    it('should create the default categories for the new user in the same transaction', async () => {
+      await service.register(baseDto);
+
+      const [[{ data: parents }], [{ data: children }]] = mockPrisma.category.createMany.mock.calls;
+
+      const expenses = Object.keys(DEFAULT_CATEGORIES.EXPENSE);
+      const incomes = Object.keys(DEFAULT_CATEGORIES.INCOME);
+      expect(parents).toHaveLength(expenses.length + incomes.length);
+      expect(parents.every((c: any) => c.userId === 'user-id' && !c.parentId)).toBe(true);
+      expect(parents.filter((c: any) => c.type === 'EXPENSE').map((c: any) => c.name)).toEqual(expenses);
+      expect(parents.filter((c: any) => c.type === 'INCOME').map((c: any) => c.name)).toEqual(incomes);
+      expect(parents.find((c: any) => c.name === 'Café')).toMatchObject({ icon: '☕', color: '#6D4C41' });
+
+      // Prestamos subcategories: same user, type and icon as the parent, lighter colors
+      const prestamos = parents.find((c: any) => c.name === 'Prestamos');
+      expect(children.map((c: any) => c.name)).toEqual(['Persona 1', 'Persona 2']);
+      for (const child of children) {
+        expect(child).toMatchObject({ userId: 'user-id', parentId: prestamos.id, type: 'EXPENSE', icon: '💰' });
+        expect(child.color).toMatch(/^#[0-9a-f]{6}$/);
+      }
+      expect(children[0].color).toBe(lightenColor('#FF6B35', 20));
+      expect(children[1].color).toBe(lightenColor(children[0].color, 15));
+    });
+
+    it('should not create the user if the default categories fail', async () => {
+      mockPrisma.category.createMany.mockRejectedValueOnce(new Error('db down'));
+
+      await expect(service.register(baseDto)).rejects.toThrow('db down');
+      expect(mockPrisma.invitation.updateMany).not.toHaveBeenCalled();
+      expect(mockJwtService.sign).not.toHaveBeenCalled();
+    });
+
+    it('should throw ConflictException if email already exists', async () => {
       mockPrisma.user.findUnique.mockResolvedValue({ id: 'existing-id' });
 
-      await expect(service.register(dto)).rejects.toThrow(ConflictException);
+      await expect(service.register(baseDto)).rejects.toThrow(ConflictException);
+      expect(mockPrisma.invitation.updateMany).not.toHaveBeenCalled();
     });
   });
 

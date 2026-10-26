@@ -25,7 +25,7 @@ describe('Categories Flow (e2e)', () => {
       console.log('✅ Access token obtained:', accessToken.substring(0, 20) + '...');
     });
 
-    it('should GET categories (global + user)', async () => {
+    it('should GET only the user categories (no global ones)', async () => {
       const res = await request(app.getHttpServer())
         .get('/api/v1/categories')
         .set('Authorization', `Bearer ${accessToken}`)
@@ -33,6 +33,11 @@ describe('Categories Flow (e2e)', () => {
 
       expect(Array.isArray(res.body)).toBe(true);
       expect(res.body.length).toBeGreaterThan(0);
+
+      // Every category belongs to the seed user: there are no global categories
+      const userIds = new Set(res.body.map((c: any) => c.userId));
+      expect(userIds.size).toBe(1);
+      expect([...userIds][0]).toEqual(expect.any(String));
 
       // Verify structure: only top-level categories (parentId: null)
       for (const category of res.body) {

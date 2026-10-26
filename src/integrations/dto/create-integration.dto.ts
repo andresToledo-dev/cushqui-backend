@@ -8,7 +8,7 @@ export class CreateIntegrationDto {
   @MaxLength(100)
   name: string;
 
-  @ApiProperty({ enum: IntegrationType, example: IntegrationType.SHORTCUT })
+  @ApiProperty({ enum: IntegrationType, example: IntegrationType.NOTIFICATION })
   @IsEnum(IntegrationType)
   type: IntegrationType;
 

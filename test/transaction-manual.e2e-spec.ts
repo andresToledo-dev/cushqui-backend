@@ -1,6 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
-import { getSharedTestApp, getAccessToken, closeSharedTestApp } from './shared-test.module';
+import { getSharedTestApp, getAccessToken, closeSharedTestApp, findCategory } from './shared-test.module';
 
 describe('Transaction Manual Flow (e2e)', () => {
   let app: INestApplication;
@@ -9,10 +9,9 @@ describe('Transaction Manual Flow (e2e)', () => {
   let initialBalance: number;
   let expectedBalance: number;
 
-  // Category ID from context: cat-loans
-  // Subcategory ID from context: 8e06b53d-d31d-41fc-bb31-f86cac468307
-  const categoryId = 'cat-loans';
-  const subcategoryId = '8e06b53d-d31d-41fc-bb31-f86cac468307';
+  // INCOME category of the seed user ("Salario") and an "E2E" subcategory under it, created once if missing
+  let categoryId: string;
+  let subcategoryId: string;
   const accountId = 'revolut-account';
   const incomeAmount = 10;
   const editedAmount = 5;
@@ -20,6 +19,18 @@ describe('Transaction Manual Flow (e2e)', () => {
   beforeAll(async () => {
     app = await getSharedTestApp();
     accessToken = getAccessToken();
+
+    const salario = await findCategory('Salario', 'INCOME');
+    categoryId = salario.id;
+    subcategoryId = salario.subcategories.find((s: any) => s.name === 'E2E')?.id;
+    if (!subcategoryId) {
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/categories/subcategories')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ name: 'E2E', parentCategoryId: categoryId, color: '#64B5F6' })
+        .expect(201);
+      subcategoryId = res.body.id;
+    }
   });
 
   afterAll(async () => {

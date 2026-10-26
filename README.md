@@ -13,7 +13,7 @@ Personal finance management backend built with NestJS, TypeScript, Prisma, and P
 - Dashboard with balance and monthly stats
 - Statistics by category, account, and month
 - Transfers between accounts
-- Integrations management (Shortcut tokens)
+- Integrations management (NOTIFICATION and MANUAL tokens)
 - Full test coverage (unit + e2e)
 
 ## Requirements
@@ -129,11 +129,23 @@ npm run test:cov
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/v1/auth/register` | Register new user |
+| POST | `/api/v1/auth/register` | Register new user (requires `invitationCode`) |
 | POST | `/api/v1/auth/login` | Login user |
 | POST | `/api/v1/auth/refresh` | Refresh access token |
 | POST | `/api/v1/auth/logout` | Logout user |
 | GET | `/api/v1/auth/me` | Get current user |
+
+Registration is invitation-only: an ADMIN creates a code and the new user sends it as `invitationCode`.
+
+### Invitations (ADMIN only)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v1/invitations` | Create an invitation code (`email?`, `expiresInDays?`); the code is returned only once |
+| GET | `/api/v1/invitations` | List invitations with status (PENDING, USED, EXPIRED, REVOKED) |
+| DELETE | `/api/v1/invitations/:id` | Revoke an unused invitation |
+
+The first ADMIN is created from the command line: `npm run invite:admin:dev [email]` (dev) or `npm run invite:admin:prod [email]` (production), then register with that code.
 
 ### Accounts
 
@@ -178,13 +190,13 @@ npm run test:cov
 - `page` - Page number (default: 1)
 - `limit` - Items per page (default: 20, max: 100)
 
-### Imports (Shortcuts)
+### Imports (bank notifications)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/v1/imports/shortcut` | Import transaction from Shortcut |
+| POST | `/api/v1/imports/notification` | Import transaction from a bank notification message |
 
-**Authentication:** Uses `Authorization: Bearer <SHORTCUT_TOKEN>` (not JWT)
+**Authentication:** Uses `Authorization: Bearer <NOTIFICATION_TOKEN>` (not JWT)
 
 ### Dashboard
 
@@ -219,7 +231,7 @@ npm run test:cov
 | DELETE | `/api/v1/integrations/:id` | Delete integration |
 | POST | `/api/v1/integrations/:id/regenerate-token` | Regenerate token |
 
-## Testing the Shortcut Import
+## Testing the Notification Import
 
 ### 1. Create an Integration (get token)
 
@@ -229,7 +241,7 @@ curl -X POST http://localhost:3000/api/v1/integrations \
   -H "Content-Type: application/json" \
   -d '{
     "name": "iPhone Shortcut",
-    "type": "SHORTCUT",
+    "type": "NOTIFICATION",
     "accountId": "revolut-account"
   }'
 ```
@@ -239,8 +251,8 @@ Response includes `plainToken` (shown only once - save it!).
 ### 2. Import a transaction using the token
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/imports/shortcut \
-  -H "Authorization: Bearer <SHORTCUT_TOKEN>" \
+curl -X POST http://localhost:3000/api/v1/imports/notification \
+  -H "Authorization: Bearer <NOTIFICATION_TOKEN>" \
   -H "Content-Type: application/json" \
   -d '{
     "source": "REVOLUT",
@@ -270,8 +282,8 @@ curl -X GET "http://localhost:3000/api/v1/transactions?status=UNCLASSIFIED" \
 ### 4. Test deduplication (send same request again)
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/imports/shortcut \
-  -H "Authorization: Bearer <SHORTCUT_TOKEN>" \
+curl -X POST http://localhost:3000/api/v1/imports/notification \
+  -H "Authorization: Bearer <NOTIFICATION_TOKEN>" \
   -H "Content-Type: application/json" \
   -d '{
     "source": "REVOLUT",
@@ -313,7 +325,7 @@ src/
 ├── accounts/          # Financial accounts
 ├── categories/        # Categories & subcategories
 ├── transactions/      # Transactions CRUD + classification
-├── imports/           # Shortcut import with deduplication
+├── imports/           # Notification and manual imports with deduplication
 ├── integrations/      # Integration tokens management
 ├── dashboard/         # Dashboard summary
 ├── statistics/        # Statistics (categories, accounts, monthly)
@@ -343,7 +355,7 @@ Key models:
 - **Category** - Global + user categories
 - **Subcategory** - Subcategories under categories
 - **Transaction** - Core entity (expense, income, transfer)
-- **Integration** - External integrations (Shortcut, etc.)
+- **Integration** - External integrations (NOTIFICATION, MANUAL)
 - **ImportEvent** - Deduplication tracking for imports
 
 ## License

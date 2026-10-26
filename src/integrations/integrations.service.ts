@@ -5,6 +5,9 @@ import { IntegrationResponseDto } from './dto/integration-response.dto';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 
+/** Número de import events recibidos con cada integración. */
+const WITH_IMPORT_COUNT = { _count: { select: { importEvents: true } } } as const;
+
 @Injectable()
 export class IntegrationsService {
   constructor(private prisma: PrismaService) {}
@@ -19,6 +22,7 @@ export class IntegrationsService {
     dto.lastUsedAt = integration.lastUsedAt ?? undefined;
     dto.createdAt = integration.createdAt;
     dto.updatedAt = integration.updatedAt;
+    dto.importEventsCount = integration._count?.importEvents ?? 0;
     dto.plainToken = plainToken;
     return dto;
   }
@@ -54,6 +58,7 @@ export class IntegrationsService {
     const integrations = await this.prisma.integration.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
+      include: WITH_IMPORT_COUNT,
     });
 
     return integrations.map((i) => this.toDto(i));
@@ -62,6 +67,7 @@ export class IntegrationsService {
   async findById(userId: string, id: string): Promise<IntegrationResponseDto> {
     const integration = await this.prisma.integration.findUnique({
       where: { id },
+      include: WITH_IMPORT_COUNT,
     });
 
     if (!integration || integration.userId !== userId) {
