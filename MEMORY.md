@@ -1,10 +1,10 @@
 # MEMORY.md - Cushqui Backend
 
 ## Estado actual
-- **Tests**: unitarios 95/95 ✅ · e2e 88/88 ✅ (dos veces seguidas, 2026-10-19). BD dev limpiada después: **solo queda `test@roto.com`** (copias en `scripts/imports/db-clean-backup-*.json`). Para volver a correr e2e: seed → e2e → `db:clean:dev:execute test@roto.com`
+- **Tests**: unitarios 121/121 ✅ · e2e 94/94 ✅ (`--runInBand`, 2026-10-21). En dev conviven `test@roto.com` y el seed `test@cushqui.local` (ADMIN) + usuarios de e2e
 - Repo en GitHub (`main` producción en Vercel región `dub1`, `dev` por defecto). Producción: `https://cushqui-backend.vercel.app`
-- Importación Excel en dev completada (`test@roto.com`, luego con datos de prueba). **Carga en producción** (`--prod`, fusionado en `main`): pendiente de que el usuario se registre en la app y lance `npm run import:prod:execute` (~40 min estimados)
-- **Rama `feature/notification-integration`** (sin commit): `IntegrationType.SHORTCUT` → `NOTIFICATION` y `POST /imports/shortcut` → `/imports/notification` (sin alias). Migración `…_integration_type_notification` (`RENAME VALUE`, conserva integraciones y tokens) **aplicada en dev**. Al desplegar: cambiar la URL del atajo de iOS; el frontend debe usar `NOTIFICATION`. Arreglo del seed en `fix/seed-default-categories` (push hecho, PR pendiente)
+- Importación Excel en dev completada (`test@roto.com`, luego con datos de prueba). **Carga en producción** (`--prod`, fusionado en `main`): pendiente de que el usuario se registre en la app y lance `npm run import:prod:execute` (~40 min estimados). Tras fusionar la rama de invitaciones, antes: `npm run invite:admin:prod <email>` y registrarse con ese código
+- **Rama `feature/invitation-registration`** (sin commit): registro solo con código de invitación, `User.role` (USER/ADMIN), módulo `invitations/`, `scripts/invitations.ts`. Migración `…_invitations` **aplicada en dev**. Frontend: añadir campo de código en `/registro` y pantalla de admin. `NOTIFICATION` (antes `SHORTCUT`) ya fusionado: al desplegar cambiar la URL del atajo de iOS
 - Pendiente: decidir la estrategia de e2e (propuesta: BD de test aparte + usuario propio por suite)
 - `Task1.md` eliminado del historial; quedan `refs/original` locales y copia en `%TEMP%\cushqui-history-backup-20261014-191722\` (limpieza pendiente, ofrecida)
 
@@ -25,6 +25,7 @@
 | Import manual: tipo explícito (`type`), nuevo `IntegrationType.MANUAL`, cuenta por `accountId` o `accountName` | Elegido por el usuario. Cada token solo vale para su endpoint (403). Sin `externalId` no se deduplica. |
 | `NOTIFICATION` en lugar de `SHORTCUT` | Pedido del usuario: los dos tipos los usa el atajo; el nombre describe lo que envía (texto de la notificación). |
 | Sin categorías globales; categorías base por usuario al registrarse | Pedido del usuario: cada uno edita/borra las suyas. Los nombres coinciden con el mapeo del Excel: la importación las reutiliza. |
+| Registro por invitación: códigos en BD (hash SHA256, un uso, 7 días, email opcional), admin por `User.role` | Elegido por el usuario. Código validado antes que el email (no revela emails); ADMIN solo vía script (bootstrap). |
 | Editar transacción: se valida el resultado final (tipo + categoría) y el saldo se revierte y reaplica | Pedido del usuario: gasto 20 → ingreso 20 lleva el saldo de 60 a 100. |
 
 ## Errores a evitar

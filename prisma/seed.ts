@@ -1,4 +1,4 @@
-import { PrismaClient, AccountType, MovementType, TransactionType, TransactionStatus, TransactionSource } from '@prisma/client';
+import { PrismaClient, AccountType, MovementType, TransactionType, TransactionStatus, TransactionSource, UserRole } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { createDefaultCategories } from '../src/categories/default-categories';
 
@@ -11,11 +11,13 @@ async function main() {
 
   const user = await prisma.user.upsert({
     where: { email: 'test@cushqui.local' },
-    update: {},
+    // ADMIN so the e2e tests can create invitations (registration is invitation-only)
+    update: { role: UserRole.ADMIN },
     create: {
       email: 'test@cushqui.local',
       passwordHash,
       name: 'Test User',
+      role: UserRole.ADMIN,
     },
   });
 

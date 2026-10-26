@@ -25,7 +25,8 @@ export class AuthController {
 
   @Public()
   @Post('register')
-  @ApiOperation({ summary: 'Register a new user' })
+  @ApiOperation({ summary: 'Register a new user with an invitation code' })
+  @ApiResponse({ status: 400, description: 'Invalid body, or invalid, used, revoked or expired invitation code (or issued for another email)' })
   @ApiResponse({ status: 201, type: TokenResponseDto })
   @ApiResponse({ status: 409, description: 'Email already registered' })
   async register(@Body() dto: RegisterDto): Promise<TokenResponseDto> {

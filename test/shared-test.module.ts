@@ -68,6 +68,21 @@ export async function findCategory(name: string, type: 'EXPENSE' | 'INCOME'): Pr
   return category;
 }
 
+/**
+ * Creates an invitation with the seed user (ADMIN since the seed) and returns its code:
+ * registration is invitation-only.
+ */
+export async function createInvitation(body: { email?: string; expiresInDays?: number } = {}): Promise<{ id: string; code: string }> {
+  const res = await request(appInstance.getHttpServer())
+    .post('/api/v1/invitations')
+    .set('Authorization', `Bearer ${getAccessToken()}`)
+    .send(body);
+  if (res.status !== 201) {
+    throw new Error(`Failed to create invitation (is the seed user ADMIN? run npm run prisma:seed): ${JSON.stringify(res.body)}`);
+  }
+  return { id: res.body.id, code: res.body.code };
+}
+
 export function getAccessToken(): string {
   if (!accessTokenInstance) {
     throw new Error('Access token not initialized. Call getSharedTestApp() first.');

@@ -187,6 +187,7 @@ const config = {
   email: process.env.IMPORT_EMAIL ?? '',
   password: process.env.IMPORT_PASSWORD ?? '',
   userName: process.env.IMPORT_USER_NAME ?? 'Import',
+  invitationCode: process.env.INVITATION_CODE ?? '',
   sourceFile: argValue('--file') ?? process.env.IMPORT_SOURCE_FILE ?? '',
   mappingFile: argValue('--mapping') ?? path.join(__dirname, 'import-mapping.json'),
 };
@@ -575,9 +576,9 @@ class Api {
     return data as T;
   }
 
-  async register(name: string): Promise<'created' | 'exists'> {
+  async register(name: string, invitationCode: string): Promise<'created' | 'exists'> {
     try {
-      await this.request('POST', '/auth/register', { email: this.email, password: this.password, name }, { auth: false });
+      await this.request('POST', '/auth/register', { email: this.email, password: this.password, name, invitationCode }, { auth: false });
       return 'created';
     } catch (error) {
       if (error instanceof ApiError && error.status === 409) return 'exists';
@@ -826,8 +827,18 @@ async function execute(plan: Plan, mapping: Mapping, sourceFile: string) {
       throw error;
     }
   } else {
-    userState = await api.register(config.userName);
-    await api.login();
+    // Local: log in if the user exists; otherwise register it (registration needs an invitation code)
+    try {
+      await api.login();
+    } catch (error) {
+      if (!(error instanceof ApiError && error.status === 401)) throw error;
+      if (!config.invitationCode) {
+        fail(`El usuario ${config.email} no existe en la API local y el registro exige invitación.
+   Genera un código (npm run invite:dev ${config.email}), ponlo en INVITATION_CODE de ${path.relative(ROOT, ENV_FILE)} y vuelve a ejecutar.`);
+      }
+      userState = await api.register(config.userName, config.invitationCode);
+      await api.login();
+    }
   }
   const me = await api.request<{ id: string; email: string }>('GET', '/auth/me');
   const existingAccounts = await api.request<ApiAccount[]>('GET', '/accounts');

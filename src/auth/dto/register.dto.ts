@@ -20,4 +20,10 @@ export class RegisterDto {
   @MinLength(1)
   @MaxLength(100)
   name: string;
+
+  @ApiProperty({ example: 'K7QF-M2XH-9RTB', description: 'Invitation code from an admin (case and dashes ignored)' })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(50)
+  invitationCode: string;
 }

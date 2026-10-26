@@ -13,12 +13,18 @@ npm run prisma:seed      # datos de prueba (solo dev, opcional)
 npm run db:clean:dev <email>          # simulación: qué se borraría de la BD dev (todo lo que no sea de <email>)
 npm run db:clean:dev:execute <email>  # lo borra (copia JSON en scripts/imports/); se niega si apunta a prod
 
+# Invitaciones (el registro exige código; los imprime una sola vez)
+npm run invite:dev [email]            # invitación USER en BD dev (con email: solo vale para ese email)
+npm run invite:admin:dev [email]      # invitación ADMIN en BD dev
+npm run invite:admin:prod [email]     # invitación ADMIN en BD prod (.env.production): primer admin de prod
+npm run user:admin:dev <email>        # hace ADMIN a un usuario existente (user:admin:prod en prod)
+
 # Ejecutar
 npm run start:dev     # desarrollo con hot reload (BD dev)
 npm run build         # build de producción
 
 # Tests
-npm test              # tests unitarios (95 tests, sin BD)
+npm test              # tests unitarios (121 tests, sin BD)
 npm run test:e2e      # tests e2e (BD dev + seed; abortan si apuntan a prod)
 npm run test:cov      # coverage
 
@@ -33,7 +39,8 @@ npm run deploy:prod   # respaldo manual: tests + migraciones BD prod + deploy Ve
 **Estructura de Módulos** (`src/`):
 
 ```
-auth/           # JWT auth (register, login, refresh, me)
+auth/           # JWT auth (register con invitación, login, refresh, me)
+invitations/    # Códigos de invitación (solo ADMIN)
 users/          # Perfil de usuario
 accounts/       # Cuentas financieras (BANK, CASH, CARD, WALLET, SAVINGS, OTHER)
 categories/     # Categorías + subcategorías (globales + usuario)
@@ -64,6 +71,15 @@ common/         # Guards, decorators, filters
 - `/api/v1/auth/me` retorna usuario sin `passwordHash`
 - Decorador `@Public()` para rutas sin autenticación
 - Decorador `@CurrentUser()` para contexto de usuario
+- **Roles** (`User.role`: `USER` / `ADMIN`): `@Roles(UserRole.ADMIN)` + `RolesGuard` global (después de `JwtAuthGuard`; `request.user` se lee de la BD en cada petición, un cambio de rol aplica al momento). `/auth/me` devuelve `role`
+
+### Registro por invitación (Crítico)
+
+- `POST /auth/register` exige `invitationCode`. Sin código válido → 400 `Invalid or expired invitation code` (mismo mensaje si no existe, está usado, revocado, caducado o es para otro email). El código se valida **antes** que el email: sin código no se puede averiguar qué emails existen
+- Códigos `XXXX-XXXX-XXXX` (sin 0/O/1/I), de un solo uso, caducan a los 7 días (1–30 con `expiresInDays`), opcionalmente ligados a un email. Se guarda solo el **SHA256** del código normalizado (mayúsculas, sin guiones): se muestra una vez. Lógica en `src/invitations/invitation-code.util.ts` (la usan API, registro y script)
+- Al registrarse, el código se consume con `updateMany where usedAt null …` dentro del mismo `$transaction` que crea el usuario y sus categorías: dos registros en paralelo no pueden usar el mismo código. El usuario recibe el `role` de la invitación
+- `POST/GET /invitations`, `DELETE /invitations/:id` (revocar; usada → 409): solo ADMIN. Por la API solo se crean invitaciones `USER`; las `ADMIN` solo con `scripts/invitations.ts`
+- **Primer admin** (no hay ninguno en una BD nueva): `npm run invite:admin:prod <email>` → registrarse en la app con ese código. El script se niega sin `--prod` si `DATABASE_URL` contiene `PROD_DB_REF`, y con `--prod` si no lo contiene
 
 ### Importaciones por notificación y manuales (Crítico)
 
@@ -143,11 +159,11 @@ Variables (ver `.env.example`): `DATABASE_URL`, `DIRECT_URL`, `JWT_SECRET`, `JWT
 
 | Tipo Test | Comando            | Notas                                               |
 | --------- | ------------------ | --------------------------------------------------- |
-| Unit      | `npm test`         | 95 tests, no requiere BD (los corre la CI en cada PR) |
+| Unit      | `npm test`         | 121 tests, no requiere BD (los corre la CI en cada PR) |
 | E2E       | `npm run test:e2e` | BD dev con seed; abortan si `DATABASE_URL` contiene `PROD_DB_REF` |
 | Coverage  | `npm run test:cov` | Salida en `coverage/`                               |
 
-**Los tests e2e crean datos reales** y dependen del usuario/cuentas del seed (`npm run prisma:seed` en dev antes de ejecutarlos). Para dejar la BD dev solo con tus datos: `npm run db:clean:dev:execute <tu email>` (borra el usuario seed y los creados por los tests).
+**Los tests e2e crean datos reales** y dependen del usuario/cuentas del seed (`npm run prisma:seed` en dev antes de ejecutarlos; el usuario seed es ADMIN para crear invitaciones con `createInvitation()` de `test/shared-test.module.ts`). Para dejar la BD dev solo con tus datos: `npm run db:clean:dev:execute <tu email>` (borra el usuario seed y los creados por los tests).
 
 ## Problemas Comunes
 
@@ -166,6 +182,7 @@ Después de `npm run prisma:seed`:
 
 - **Email**: `test@cushqui.local`
 - **Password**: `Password123!`
+- Rol **ADMIN** (puede crear invitaciones)
 - Pre-cargados: 3 cuentas, las categorías base (12 de gasto + 5 de ingreso; Prestamos con Persona 1 y Persona 2), 4 transacciones
 
 ## Base de API
