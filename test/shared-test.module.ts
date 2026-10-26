@@ -83,6 +83,48 @@ export async function createInvitation(body: { email?: string; expiresInDays?: n
   return { id: res.body.id, code: res.body.code };
 }
 
+/**
+ * Creates an account of the seed user only for one suite, so suites running in parallel never change
+ * each other's balances (they used to share the seed Revolut account). Returns its id.
+ */
+export async function createTestAccount(label: string, balance = 1000): Promise<string> {
+  const res = await request(appInstance.getHttpServer())
+    .post('/api/v1/accounts')
+    .set('Authorization', `Bearer ${getAccessToken()}`)
+    .send({ name: `E2E ${label} ${Date.now()}`, type: 'BANK', currency: 'EUR', balance });
+  if (res.status !== 201) {
+    throw new Error(`Failed to create test account: ${JSON.stringify(res.body)}`);
+  }
+  return res.body.id;
+}
+
+/**
+ * Removes the accounts a suite created (call it in afterAll). Accounts with transactions or movements
+ * other than OPENING can only be deactivated, so they stay inactive in the dev DB.
+ */
+export async function deactivateAccounts(ids: (string | undefined)[]): Promise<void> {
+  for (const id of ids.filter(Boolean)) {
+    await request(appInstance.getHttpServer())
+      .delete(`/api/v1/accounts/${id}`)
+      .set('Authorization', `Bearer ${getAccessToken()}`);
+  }
+}
+
+/**
+ * Deletes the integrations a suite created (call it in afterAll, before closeSharedTestApp),
+ * so test runs do not pile up integrations in the dev DB. Their import events stay (integrationId → null).
+ */
+export async function deleteIntegrations(ids: (string | undefined)[]): Promise<void> {
+  for (const id of ids.filter(Boolean)) {
+    const res = await request(appInstance.getHttpServer())
+      .delete(`/api/v1/integrations/${id}`)
+      .set('Authorization', `Bearer ${getAccessToken()}`);
+    if (res.status >= 300 && res.status !== 404) {
+      throw new Error(`Failed to delete integration ${id}: HTTP ${res.status} ${JSON.stringify(res.body)}`);
+    }
+  }
+}
+
 export function getAccessToken(): string {
   if (!accessTokenInstance) {
     throw new Error('Access token not initialized. Call getSharedTestApp() first.');

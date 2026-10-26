@@ -1,12 +1,13 @@
 import { INestApplication } from "@nestjs/common";
 import * as request from "supertest";
-import { getSharedTestApp, getAccessToken, closeSharedTestApp } from "./shared-test.module";
+import { getSharedTestApp, getAccessToken, closeSharedTestApp, deleteIntegrations } from "./shared-test.module";
 
 describe("Manual Import Flow (e2e)", () => {
   let app: INestApplication;
   let accessToken: string;
   let manualToken: string;
   let notificationToken: string;
+  const integrationIds: string[] = [];
   let accountId: string;
   let balance: number;
 
@@ -32,6 +33,7 @@ describe("Manual Import Flow (e2e)", () => {
   });
 
   afterAll(async () => {
+    await deleteIntegrations(integrationIds);
     // The account has transactions, so this only deactivates it
     if (accountId) {
       await request(app.getHttpServer())
@@ -58,6 +60,7 @@ describe("Manual Import Flow (e2e)", () => {
         .expect(201);
       expect(manualRes.body.type).toBe("MANUAL");
       manualToken = manualRes.body.plainToken;
+      integrationIds.push(manualRes.body.id);
 
       const notificationRes = await request(app.getHttpServer())
         .post("/api/v1/integrations")
@@ -65,6 +68,7 @@ describe("Manual Import Flow (e2e)", () => {
         .send({ name: "manual_test_notification", type: "NOTIFICATION", accountId })
         .expect(201);
       notificationToken = notificationRes.body.plainToken;
+      integrationIds.push(notificationRes.body.id);
     });
 
     it("should import an EXPENSE by accountId and lower the balance", async () => {

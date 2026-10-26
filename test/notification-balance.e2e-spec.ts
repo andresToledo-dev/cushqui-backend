@@ -1,11 +1,12 @@
 import { INestApplication } from "@nestjs/common";
 import * as request from "supertest";
-import { getSharedTestApp, getAccessToken, closeSharedTestApp, findCategory } from "./shared-test.module";
+import { getSharedTestApp, getAccessToken, closeSharedTestApp, findCategory, deleteIntegrations, createTestAccount, deactivateAccounts } from "./shared-test.module";
 
 describe("Notification Balance Flow (e2e)", () => {
   let app: INestApplication;
   let accessToken: string;
   let integrationToken: string;
+  let integrationId: string;
   let initialBalance: number;
   let expectedBalance: number;
   let importedTransactionId: string;
@@ -13,15 +14,18 @@ describe("Notification Balance Flow (e2e)", () => {
 
   // Default "Prestamos" category of the seed user (looked up by name: its id is random)
   let categoryId: string;
-  const accountId = "revolut-account";
+  let accountId: string; // own account: other suites must not change its balance
 
   beforeAll(async () => {
     app = await getSharedTestApp();
     accessToken = getAccessToken();
+    accountId = await createTestAccount("Notification balance");
     categoryId = (await findCategory("Prestamos", "EXPENSE")).id;
   });
 
   afterAll(async () => {
+    await deleteIntegrations([integrationId]);
+    await deactivateAccounts([accountId]);
     await closeSharedTestApp();
   });
 
@@ -33,28 +37,21 @@ describe("Notification Balance Flow (e2e)", () => {
       console.log("✅ Access token obtained:", accessToken.substring(0, 20) + "...");
     });
 
-    it("should get or create integration and obtain token", async () => {
-      // Reuse NOTIFICATION_INTEGRATION_TOKEN from .env if set, otherwise create a new integration
-      const envToken = process.env.NOTIFICATION_INTEGRATION_TOKEN;
+    it("should create an integration linked to the test account and obtain its token", async () => {
+      // Always a new integration: it must be linked to this suite's own account
+      const res = await request(app.getHttpServer())
+        .post("/api/v1/integrations")
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send({
+          name: "notification_balance_test",
+          type: "NOTIFICATION",
+          accountId,
+        })
+        .expect(201);
 
-      if (envToken) {
-        integrationToken = envToken;
-        console.log("✅ Using NOTIFICATION_INTEGRATION_TOKEN from .env");
-      } else {
-        // Create a new integration for testing
-        const res = await request(app.getHttpServer())
-          .post("/api/v1/integrations")
-          .set("Authorization", `Bearer ${accessToken}`)
-          .send({
-            name: "notification_balance_test",
-            type: "NOTIFICATION",
-            accountId,
-          })
-          .expect(201);
-
-        integrationToken = res.body.plainToken;
-        console.log("✅ Created new integration and got token:", integrationToken.substring(0, 20) + "...");
-      }
+      integrationToken = res.body.plainToken;
+      integrationId = res.body.id;
+      console.log("✅ Created new integration and got token:", integrationToken.substring(0, 20) + "...");
 
       expect(integrationToken).toBeDefined();
       expect(typeof integrationToken).toBe("string");
