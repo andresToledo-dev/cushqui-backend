@@ -24,7 +24,7 @@ npm run start:dev     # desarrollo con hot reload (BD dev)
 npm run build         # build de producción
 
 # Tests
-npm test              # tests unitarios (125 tests, sin BD)
+npm test              # tests unitarios (147 tests, sin BD)
 npm run test:e2e      # tests e2e (BD dev + seed; abortan si apuntan a prod)
 npm run test:cov      # coverage
 
@@ -90,6 +90,7 @@ common/         # Guards, decorators, filters
 - Retorna `{ created: true }` o `{ created: false, duplicate: true, transactionId }`
 - **Cada token solo vale para su endpoint**: `NOTIFICATION` → `POST /imports/notification` (parsea el mensaje; la integración debe tener cuenta asociada), `MANUAL` → `POST /imports/manual`. Token de otro tipo → 403. Ambos tipos los usa el atajo de iOS: `NOTIFICATION` envía el texto de la notificación del banco (antes se llamaba `SHORTCUT`)
 - `POST /imports/manual { type: EXPENSE|INCOME, amount > 0, accountId | accountName, date?, description?, externalId? }`: exactamente uno de `accountId` / `accountName` (nombre sin distinguir mayúsculas, solo cuentas activas; 0 → 404, varias → 409); cuenta inactiva → 400. Crea la transacción `UNCLASSIFIED` con `source: MANUAL` y la moneda de la cuenta (`description` → `merchant`), ajusta el saldo y registra el `ImportEvent`
+- **Palabras por integración NOTIFICATION** (`expenseWords` / `incomeWords`, texto separado por comas, p. ej. `"has enviado,has gastado"`): **obligatorias** al crear una NOTIFICATION (400 si faltan o quedan vacías), no permitidas en MANUAL (400; ahí valen `null`). Se normalizan al guardar (trim, sin vacías ni repetidas) y se cambian con `PATCH /integrations/:id` (`UpdateIntegrationDto`). `classifyMessage` (`src/integrations/notification-words.util.ts`) busca cada palabra en el mensaje sin distinguir mayúsculas: solo de gasto → EXPENSE, solo de ingreso → INCOME, **de las dos o de ninguna → N/A** (sin transacción). La migración dio a las NOTIFICATION existentes las palabras que antes estaban fijas en el código. La extracción de importe y comercio no cambió (forman la fingerprint)
 - Import manual: **solo se deduplica si llega `externalId`** (mismo importe el mismo día es legítimo); sin él cada petición crea una transacción. La fingerprint de notificación no se toca (rompería la deduplicación de eventos ya guardados)
 
 ### Transacciones
@@ -160,7 +161,7 @@ Variables (ver `.env.example`): `DATABASE_URL`, `DIRECT_URL`, `JWT_SECRET`, `JWT
 
 | Tipo Test | Comando            | Notas                                               |
 | --------- | ------------------ | --------------------------------------------------- |
-| Unit      | `npm test`         | 125 tests, no requiere BD (los corre la CI en cada PR) |
+| Unit      | `npm test`         | 147 tests, no requiere BD (los corre la CI en cada PR) |
 | E2E       | `npm run test:e2e` | BD dev con seed; abortan si `DATABASE_URL` contiene `PROD_DB_REF` |
 | Coverage  | `npm run test:cov` | Salida en `coverage/`                               |
 

@@ -16,4 +16,24 @@ export class CreateIntegrationDto {
   @IsOptional()
   @IsString()
   accountId?: string;
+
+  @ApiProperty({
+    example: 'has enviado,has gastado',
+    required: false,
+    description: 'Required for NOTIFICATION (not allowed for MANUAL): comma-separated words that mark a message as an expense',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  expenseWords?: string;
+
+  @ApiProperty({
+    example: 'has recibido,te ha enviado dinero',
+    required: false,
+    description: 'Required for NOTIFICATION (not allowed for MANUAL): comma-separated words that mark a message as an income',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  incomeWords?: string;
 }

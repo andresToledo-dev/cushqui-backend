@@ -44,6 +44,8 @@ describe('ImportsService', () => {
   const userId = 'user-id';
   const integrationId = 'integration-id';
   const accountId = 'account-id';
+  // The words the migration gives to existing NOTIFICATION integrations
+  const defaultWords = { expenseWords: 'has enviado,has gastado', incomeWords: 'has recibido,te ha enviado dinero' };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -83,7 +85,7 @@ describe('ImportsService', () => {
       mockPrisma.integration.update.mockResolvedValue({});
       mockTx.account.update.mockResolvedValue({});
 
-      const result = await service.importFromNotification(userId, integrationId, accountId, dto);
+      const result = await service.importFromNotification(userId, integrationId, accountId, defaultWords, dto);
 
       expect(result).toEqual({
         success: true,
@@ -126,7 +128,7 @@ describe('ImportsService', () => {
       mockPrisma.integration.update.mockResolvedValue({});
       mockTx.account.update.mockResolvedValue({});
 
-      const result = await service.importFromNotification(userId, integrationId, accountId, dto);
+      const result = await service.importFromNotification(userId, integrationId, accountId, defaultWords, dto);
 
       expect(result).toEqual({
         success: true,
@@ -150,7 +152,7 @@ describe('ImportsService', () => {
       mockPrisma.importEvent.create.mockResolvedValue({});
       mockPrisma.integration.update.mockResolvedValue({});
 
-      const result = await service.importFromNotification(userId, integrationId, accountId, dto);
+      const result = await service.importFromNotification(userId, integrationId, accountId, defaultWords, dto);
 
       expect(result).toEqual({
         success: true,
@@ -179,7 +181,7 @@ describe('ImportsService', () => {
       mockPrisma.importEvent.findUnique.mockResolvedValue(existingEvent);
       mockPrisma.integration.update.mockResolvedValue({});
 
-      const result = await service.importFromNotification(userId, integrationId, accountId, dto);
+      const result = await service.importFromNotification(userId, integrationId, accountId, defaultWords, dto);
 
       expect(result).toEqual({
         success: true,
@@ -202,12 +204,48 @@ describe('ImportsService', () => {
       mockPrisma.integration.update.mockResolvedValue({});
       mockTx.account.update.mockResolvedValue({});
 
-      await service.importFromNotification(userId, integrationId, accountId, dto);
+      await service.importFromNotification(userId, integrationId, accountId, defaultWords, dto);
 
       const fingerprintCall = mockPrisma.importEvent.create.mock.calls[0][0];
       expect(fingerprintCall.data.fingerprint).toBeDefined();
       expect(typeof fingerprintCall.data.fingerprint).toBe('string');
       expect(fingerprintCall.data.fingerprint.length).toBe(64);
+    });
+
+    describe('with the integration words', () => {
+      const date = '2026-10-02T12:00:00Z';
+      const customWords = { expenseWords: 'Caixa Geral,pagaste', incomeWords: 'te depositaron,te han enviado' };
+
+      beforeEach(() => {
+        mockPrisma.importEvent.findUnique.mockResolvedValue(null);
+        mockTx.transaction.create.mockResolvedValue({ id: 'tx-1' });
+        mockPrisma.importEvent.create.mockResolvedValue({});
+        mockPrisma.integration.update.mockResolvedValue({});
+        mockTx.account.update.mockResolvedValue({});
+      });
+
+      it.each([
+        ['an expense word (case-insensitive)', 'CAIXA GERAL: compra de 12,50 € en Pingo Doce', FinalDecision.EXPENSE, TransactionType.EXPENSE],
+        ['an income word', 'Te depositaron 200 € de Empresa SL', FinalDecision.INCOME, TransactionType.INCOME],
+      ])('should classify a message with %s', async (_label, message, decision, type) => {
+        const result = await service.importFromNotification(userId, integrationId, accountId, customWords, { message, date });
+
+        expect(result.created).toBe(true);
+        expect(mockTx.transaction.create.mock.calls[0][0].data.type).toBe(type);
+        expect(mockPrisma.importEvent.create.mock.calls[0][0].data.finalDecision).toBe(decision);
+      });
+
+      it.each([
+        ['words of both lists', 'Pagaste 10 € y te han enviado 10 €'],
+        ['none of the words (the old hardcoded ones no longer apply)', 'Has gastado 10 € en Bar'],
+      ])('should record N/A without a transaction for %s', async (_label, message) => {
+        const result = await service.importFromNotification(userId, integrationId, accountId, customWords, { message, date });
+
+        expect(result).toEqual({ success: true, created: false, transactionId: undefined });
+        expect(mockTx.transaction.create).not.toHaveBeenCalled();
+        expect(mockTx.account.update).not.toHaveBeenCalled();
+        expect(mockPrisma.importEvent.create.mock.calls[0][0].data.finalDecision).toBe(FinalDecision.NA);
+      });
     });
   });
 

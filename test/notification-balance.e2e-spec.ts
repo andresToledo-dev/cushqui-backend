@@ -46,6 +46,8 @@ describe("Notification Balance Flow (e2e)", () => {
           name: "notification_balance_test",
           type: "NOTIFICATION",
           accountId,
+          expenseWords: "has enviado,has gastado",
+          incomeWords: "has recibido,te ha enviado dinero",
         })
         .expect(201);
 
