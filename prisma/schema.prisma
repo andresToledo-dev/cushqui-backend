@@ -110,18 +110,21 @@ model Invitation {
 }
 
 model Account {
-  id        String      @id @default(uuid())
-  userId    String
-  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name      String
-  type      AccountType
-  currency  String      @default("EUR")
-  balance   Decimal     @default(0) @db.Decimal(19, 4)
-  isActive  Boolean     @default(true)
-  icon      String?
-  color     String?
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
+  id             String      @id @default(uuid())
+  userId         String
+  user           User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name           String
+  type           AccountType
+  currency       String      @default("EUR")
+  balance        Decimal     @default(0) @db.Decimal(19, 4)
+  isActive       Boolean     @default(true)
+  /// Display preferences read and edited by the frontend; the API never filters by them
+  visibleInList  Boolean     @default(true)
+  balanceVisible Boolean     @default(true)
+  icon           String?
+  color          String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
 
   transactions      Transaction[]     @relation("TransactionFromAccount")
   integrations      Integration[]

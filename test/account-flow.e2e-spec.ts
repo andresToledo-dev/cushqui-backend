@@ -45,6 +45,8 @@ describe("Account Flow (e2e)", () => {
       expect(res.body.icon).toBe("🏠");
       expect(res.body.color).toBe("#FFD700");
       expect(res.body.isActive).toBe(true);
+      expect(res.body.visibleInList).toBe(true);
+      expect(res.body.balanceVisible).toBe(true);
 
       accountId = res.body.id;
       console.log("✅ POST /accounts response:", JSON.stringify(res.body, null, 2));
@@ -66,6 +68,43 @@ describe("Account Flow (e2e)", () => {
       expect(res.body.id).toBe(accountId);
 
       console.log("✅ PATCH /accounts/:id response:", JSON.stringify(res.body, null, 2));
+    });
+
+    it("should change each visibility flag on its own and keep hidden accounts in the list", async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/api/v1/accounts/${accountId}`)
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send({ visibleInList: false })
+        .expect(200);
+
+      expect(res.body.visibleInList).toBe(false);
+      expect(res.body.balanceVisible).toBe(true);
+
+      const balanceRes = await request(app.getHttpServer())
+        .patch(`/api/v1/accounts/${accountId}`)
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send({ balanceVisible: false })
+        .expect(200);
+
+      expect(balanceRes.body.visibleInList).toBe(false);
+      expect(balanceRes.body.balanceVisible).toBe(false);
+
+      // The frontend decides what to hide: it still needs the account to let the user show it again
+      const list = await request(app.getHttpServer())
+        .get("/api/v1/accounts")
+        .set("Authorization", `Bearer ${accessToken}`)
+        .expect(200);
+
+      expect(list.body.find((account: { id: string }) => account.id === accountId)).toMatchObject({
+        visibleInList: false,
+        balanceVisible: false,
+      });
+
+      await request(app.getHttpServer())
+        .patch(`/api/v1/accounts/${accountId}`)
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send({ visibleInList: "false" })
+        .expect(400);
     });
 
     it("should reject changing the balance through PATCH", async () => {

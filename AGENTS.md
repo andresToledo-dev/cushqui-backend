@@ -24,7 +24,7 @@ npm run start:dev     # desarrollo con hot reload (BD dev)
 npm run build         # build de producción
 
 # Tests
-npm test              # tests unitarios (158 tests, sin BD)
+npm test              # tests unitarios (163 tests, sin BD)
 npm run test:e2e      # tests e2e (BD dev + seed; abortan si apuntan a prod)
 npm run test:cov      # coverage
 
@@ -128,6 +128,11 @@ common/         # Guards, decorators, filters
 - Nunca leer-modificar-escribir el saldo: `adjustBalance` usa `increment` atómico de Prisma
 - **`PATCH /accounts/:id` no acepta `balance`**: el saldo solo cambia por transacciones o movimientos, para que todo cambio quede registrado
 
+### Visibilidad de cuentas
+
+- `visibleInList` (mostrar en la lista de cuentas) y `balanceVisible` (mostrar el saldo): booleanos, `true` por defecto, se cambian con `PATCH /accounts/:id`. Solo aceptan booleanos reales: `enableImplicitConversion` convierte cualquier texto no vacío en `true` (también `"false"`), por eso conservan el valor original con `@Transform`
+- Son preferencias de presentación que aplica el frontend: la API **no filtra ni oculta nada** por ellas. `GET /accounts` devuelve también las ocultas (para poder volver a mostrarlas), y dashboard y statistics siguen contándolas
+
 ### Movimientos de cuenta (`account_movements`, Crítico)
 
 - Una fila por evento, tipo `MovementType`: `OPENING`, `ADJUSTMENT`, `TRANSFER`. Se crean con `recordMovement(tx, data)` de `src/movements/movement.util.ts`
@@ -172,7 +177,7 @@ Variables (ver `.env.example`): `DATABASE_URL`, `DIRECT_URL`, `JWT_SECRET`, `JWT
 
 | Tipo Test | Comando            | Notas                                               |
 | --------- | ------------------ | --------------------------------------------------- |
-| Unit      | `npm test`         | 158 tests, no requiere BD (los corre la CI en cada PR) |
+| Unit      | `npm test`         | 163 tests, no requiere BD (los corre la CI en cada PR) |
 | E2E       | `npm run test:e2e` | BD dev con seed; abortan si `DATABASE_URL` contiene `PROD_DB_REF` |
 | Coverage  | `npm run test:cov` | Salida en `coverage/`                               |
 

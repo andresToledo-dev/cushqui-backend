@@ -126,6 +126,8 @@ export class AccountsService {
         type: dto.type,
         currency: dto.currency,
         isActive: dto.isActive,
+        visibleInList: dto.visibleInList,
+        balanceVisible: dto.balanceVisible,
         icon: dto.icon,
         color: dto.color,
       },
@@ -183,6 +185,8 @@ export class AccountsService {
     currency: string;
     balance: Decimal;
     isActive: boolean;
+    visibleInList: boolean;
+    balanceVisible: boolean;
     icon: string | null;
     color: string | null;
     createdAt: Date;
@@ -195,6 +199,8 @@ export class AccountsService {
       currency: account.currency,
       balance: account.balance.toNumber(),
       isActive: account.isActive,
+      visibleInList: account.visibleInList,
+      balanceVisible: account.balanceVisible,
       icon: account.icon ?? undefined,
       color: account.color ?? undefined,
       createdAt: account.createdAt,

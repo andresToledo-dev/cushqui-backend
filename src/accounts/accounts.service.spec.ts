@@ -41,6 +41,8 @@ describe('AccountsService', () => {
     currency: 'EUR',
     balance: new Decimal(1000),
     isActive: true,
+    visibleInList: true,
+    balanceVisible: true,
     icon: null,
     color: null,
     createdAt: new Date(),
@@ -171,6 +173,18 @@ describe('AccountsService', () => {
 
       expect(mockPrisma.account.update.mock.calls[0][0].data).not.toHaveProperty('balance');
       expect(mockPrisma.accountMovement.create).not.toHaveBeenCalled();
+    });
+
+    it('should update and return each visibility flag on its own', async () => {
+      mockPrisma.account.findUnique.mockResolvedValue(buildAccount());
+      mockPrisma.account.update.mockResolvedValue(buildAccount({ balanceVisible: false }));
+
+      const result = await service.update(userId, accountId, { balanceVisible: false });
+
+      const { data } = mockPrisma.account.update.mock.lastCall[0];
+      expect(data.balanceVisible).toBe(false);
+      expect(data.visibleInList).toBeUndefined();
+      expect(result).toMatchObject({ visibleInList: true, balanceVisible: false });
     });
   });
 

@@ -23,6 +23,12 @@ export class AccountResponseDto {
   @ApiProperty({ example: true })
   isActive: boolean;
 
+  @ApiProperty({ example: true, description: 'Show the account in the accounts list' })
+  visibleInList: boolean;
+
+  @ApiProperty({ example: true, description: 'Show the balance of the account' })
+  balanceVisible: boolean;
+
   @ApiProperty({ example: '🏠', required: false })
   icon?: string;
 
