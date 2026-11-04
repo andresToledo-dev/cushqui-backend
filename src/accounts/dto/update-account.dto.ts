@@ -13,6 +13,7 @@ const KeepRawValue = () => Transform(({ obj, key }) => obj[key]);
 export class UpdateAccountDto extends PartialType(OmitType(CreateAccountDto, ['balance', 'openingDate'] as const)) {
   @ApiProperty({ example: true, required: false })
   @IsOptional()
+  @KeepRawValue()
   @IsBoolean()
   isActive?: boolean;
 

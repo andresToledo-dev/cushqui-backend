@@ -1,7 +1,7 @@
 # MEMORY.md - Cushqui Backend
 
 ## Estado actual
-- **Tests**: unitarios 163/163 ✅ · e2e 99/99 ✅ (2026-11-04). En dev conviven `test@roto.com` y el seed `test@cushqui.local` (ADMIN) + usuarios de e2e
+- **Tests**: unitarios 164/164 ✅ · e2e 99/99 ✅ (2026-11-04). En dev conviven `test@roto.com` y el seed `test@cushqui.local` (ADMIN) + usuarios de e2e
 - Repo en GitHub (`main` producción en Vercel región `dub1`, `dev` por defecto). Producción: `https://cushqui-backend.vercel.app`
 - Importación Excel en dev completada (`test@roto.com`, luego con datos de prueba). **Carga en producción** (`--prod`, fusionado en `main`): pendiente de que el usuario se registre en la app y lance `npm run import:prod:execute` (~40 min estimados). Tras fusionar la rama de invitaciones, antes: `npm run invite:admin:prod <email>` y registrarse con ese código
 - Fusionados en `dev`/`main`: invitaciones, `NOTIFICATION`, token de integración SHA256, e2e con cuentas propias, `expenseWords`/`incomeWords` por integración NOTIFICATION (obligatorias; ambas listas → N/A). Frontend: pedir y editar las dos listas

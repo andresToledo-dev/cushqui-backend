@@ -24,7 +24,7 @@ npm run start:dev     # desarrollo con hot reload (BD dev)
 npm run build         # build de producción
 
 # Tests
-npm test              # tests unitarios (163 tests, sin BD)
+npm test              # tests unitarios (164 tests, sin BD)
 npm run test:e2e      # tests e2e (BD dev + seed; abortan si apuntan a prod)
 npm run test:cov      # coverage
 
@@ -64,7 +64,7 @@ common/         # Guards, decorators, filters
   - Tareas ligadas a sus commits, p. ej. `T01: Add visibility account: archivos que cambiamos y lógica que implementamos`
   - Cambios importantes, si los hay
 - Si un cambio altera una tarea anterior de la rama, actualiza esa tarea
-- **Commits**: cuando el usuario aprueba una tarea, va en un commit `TXX: comentario corto en inglés`. `XX` es el número de la tarea, con dos dígitos, y vuelve a `T01` en cada rama
+- **Commits**: cuando el usuario aprueba una tarea, va en un commit `TXX: comentario corto en inglés`. `XX` es el número de la tarea, con dos dígitos, y vuelve a `T01` en cada rama. Un cambio relacionado con una tarea ya hecha es una subtarea de ella: `T02-1`, `T02-2`…
 
 ## Memoria para el agente
 
@@ -130,7 +130,7 @@ common/         # Guards, decorators, filters
 
 ### Visibilidad de cuentas
 
-- `visibleInList` (mostrar en la lista de cuentas) y `balanceVisible` (mostrar el saldo): booleanos, `true` por defecto, se cambian con `PATCH /accounts/:id`. Solo aceptan booleanos reales: `enableImplicitConversion` convierte cualquier texto no vacío en `true` (también `"false"`), por eso conservan el valor original con `@Transform`
+- `visibleInList` (mostrar en la lista de cuentas) y `balanceVisible` (mostrar el saldo): booleanos, `true` por defecto, se cambian con `PATCH /accounts/:id`. Solo aceptan booleanos reales, igual que `isActive` de cuentas: `enableImplicitConversion` convierte cualquier texto no vacío en `true` (también `"false"`), por eso conservan el valor original con `@Transform`
 - Son preferencias de presentación que aplica el frontend: la API **no filtra ni oculta nada** por ellas. `GET /accounts` devuelve también las ocultas (para poder volver a mostrarlas), y dashboard y statistics siguen contándolas
 
 ### Movimientos de cuenta (`account_movements`, Crítico)
@@ -177,7 +177,7 @@ Variables (ver `.env.example`): `DATABASE_URL`, `DIRECT_URL`, `JWT_SECRET`, `JWT
 
 | Tipo Test | Comando            | Notas                                               |
 | --------- | ------------------ | --------------------------------------------------- |
-| Unit      | `npm test`         | 163 tests, no requiere BD (los corre la CI en cada PR) |
+| Unit      | `npm test`         | 164 tests, no requiere BD (los corre la CI en cada PR) |
 | E2E       | `npm run test:e2e` | BD dev con seed; abortan si `DATABASE_URL` contiene `PROD_DB_REF` |
 | Coverage  | `npm run test:cov` | Salida en `coverage/`                               |
 

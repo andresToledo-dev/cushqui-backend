@@ -24,6 +24,7 @@ describe('UpdateAccountDto', () => {
     ['visibleInList', 'false'],
     ['balanceVisible', 'no'],
     ['visibleInList', 1],
+    ['isActive', 'false'],
   ])('should reject %s = %j: only real booleans are valid', async (field, value) => {
     await expect(validate({ [field]: value })).rejects.toThrow(BadRequestException);
   });
