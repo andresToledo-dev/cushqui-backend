@@ -6,7 +6,7 @@ import { ImportResponseDto } from './dto/import-response.dto';
 import { TransactionSource, TransactionStatus, TransactionType, FinalDecision, IntegrationType, Account } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import * as crypto from 'crypto';
-import { adjustBalance, balanceDelta } from '../accounts/account-balance.util';
+import { adjustBalance, assertAccountsActive, balanceDelta } from '../accounts/account-balance.util';
 import { classifyMessage } from '../integrations/notification-words.util';
 
 /** Words of the NOTIFICATION integration that classify a message as expense / income. */
@@ -106,6 +106,8 @@ export class ImportsService {
     let transactionId: string | undefined;
 
     if (finalDecision === FinalDecision.EXPENSE || finalDecision === FinalDecision.INCOME) {
+      await assertAccountsActive(this.prisma, [accountId]);
+
       const type = finalDecision === FinalDecision.EXPENSE ? TransactionType.EXPENSE : TransactionType.INCOME;
       const decimalAmount = new Decimal(amount);
 

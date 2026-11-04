@@ -6,7 +6,7 @@ import { TransferResponseDto } from './dto/transfer-response.dto';
 import { MovementResponseDto } from '../movements/dto/movement-response.dto';
 import { MovementType } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
-import { adjustBalance } from '../accounts/account-balance.util';
+import { adjustBalance, assertAccountsActive } from '../accounts/account-balance.util';
 import { movementInclude, recordMovement, toMovementResponseDto } from '../movements/movement.util';
 
 @Injectable()
@@ -15,6 +15,7 @@ export class TransfersService {
 
   async create(userId: string, dto: CreateTransferDto): Promise<TransferResponseDto> {
     const { fromAccount } = await this.validateAccounts(userId, dto.fromAccountId, dto.toAccountId, dto.currency);
+    await assertAccountsActive(this.prisma, [dto.fromAccountId, dto.toAccountId]);
 
     const amount = new Decimal(dto.amount);
     const date = new Date(dto.date);
@@ -75,6 +76,8 @@ export class TransfersService {
     const balanceChanged = newFromId !== oldFromId || newToId !== oldToId || !newAmount.equals(oldAmount);
 
     if (balanceChanged) {
+      await assertAccountsActive(this.prisma, [oldFromId, oldToId, newFromId, newToId]);
+
       // Available in the new source account once the old transfer is reverted
       let available = fromAccount.balance;
       if (newFromId === oldFromId) available = available.add(oldAmount);

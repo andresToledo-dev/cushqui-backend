@@ -35,6 +35,7 @@ describe('TransactionsService', () => {
     },
     account: {
       findUnique: jest.fn(),
+      count: jest.fn(),
     },
     category: {
       findUnique: jest.fn(),
@@ -358,6 +359,54 @@ describe('TransactionsService', () => {
       await service.delete(userId, transactionId);
 
       expectBalanceIncrement(accountId, 25.5);
+    });
+  });
+
+  describe('closed account', () => {
+    const existing = { id: transactionId, userId, accountId, amount: new Decimal(10), type: TransactionType.EXPENSE, status: TransactionStatus.UNCLASSIFIED, categoryId: null, subcategoryId: null, deletedAt: null };
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      mockPrisma.transaction.findUnique.mockResolvedValue(existing);
+      mockPrisma.account.count.mockReset();
+      mockPrisma.account.count.mockResolvedValue(1);
+    });
+
+    it('should reject creating a transaction', async () => {
+      mockPrisma.account.findUnique.mockResolvedValue({ id: accountId, userId });
+
+      await expect(
+        service.create(userId, { accountId, amount: 10, currency: 'EUR', type: TransactionType.EXPENSE, transactionDate: new Date().toISOString() } as CreateTransactionDto),
+      ).rejects.toThrow('Account is inactive');
+      expect(mockTx.transaction.create).not.toHaveBeenCalled();
+    });
+
+    it('should reject deleting a transaction', async () => {
+      await expect(service.delete(userId, transactionId)).rejects.toThrow('Account is inactive');
+      expect(mockTx.transaction.update).not.toHaveBeenCalled();
+    });
+
+    it('should reject changing the amount', async () => {
+      await expect(service.update(userId, transactionId, { amount: 20 })).rejects.toThrow('Account is inactive');
+      expect(mockTx.transaction.update).not.toHaveBeenCalled();
+    });
+
+    it('should check both accounts when the transaction moves to another account', async () => {
+      mockPrisma.account.findUnique.mockResolvedValue({ id: 'other-account', userId });
+
+      await expect(service.update(userId, transactionId, { accountId: 'other-account' })).rejects.toThrow('Account is inactive');
+      expect(mockPrisma.account.count).toHaveBeenCalledWith({
+        where: { id: { in: [accountId, 'other-account'] }, isActive: false },
+      });
+    });
+
+    it('should allow an edit that resends the same amount and type, without touching the balance', async () => {
+      mockTx.transaction.update.mockResolvedValue({ ...existing, merchant: 'Bar', currency: 'EUR', source: TransactionSource.MANUAL, transactionDate: new Date(), createdAt: new Date(), updatedAt: new Date(), account: { name: 'Revolut' }, category: null, subcategory: null });
+
+      await service.update(userId, transactionId, { amount: 10, type: TransactionType.EXPENSE, merchant: 'Bar' });
+
+      expect(mockPrisma.account.count).not.toHaveBeenCalled();
+      expect(mockTx.account.update).not.toHaveBeenCalled();
     });
   });
 

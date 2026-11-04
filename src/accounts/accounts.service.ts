@@ -7,6 +7,7 @@ import { AccountResponseDto } from './dto/account-response.dto';
 import { AccountType, MovementType } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { recordMovement } from '../movements/movement.util';
+import { assertAccountsActive } from './account-balance.util';
 
 @Injectable()
 export class AccountsService {
@@ -59,6 +60,8 @@ export class AccountsService {
       if (delta.isZero()) {
         return current;
       }
+
+      await assertAccountsActive(tx, [id]);
 
       // Optimistic lock: only apply if nobody changed the balance since we read it,
       // so balanceBefore/balanceAfter are exact
@@ -125,7 +128,6 @@ export class AccountsService {
         name: dto.name,
         type: dto.type,
         currency: dto.currency,
-        isActive: dto.isActive,
         visibleInList: dto.visibleInList,
         balanceVisible: dto.balanceVisible,
         icon: dto.icon,
@@ -145,6 +147,15 @@ export class AccountsService {
       throw new NotFoundException('Account not found');
     }
 
+    // Already closed: nothing to do, and no second CLOSING
+    if (!account.isActive) {
+      return;
+    }
+
+    if (!account.balance.isZero()) {
+      throw new ConflictException('Account balance must be 0 to close it');
+    }
+
     const [transactionCount, movementCount] = await Promise.all([
       this.prisma.transaction.count({ where: { accountId: id } }),
       // The OPENING alone does not count as history worth keeping
@@ -157,11 +168,27 @@ export class AccountsService {
     ]);
 
     if (transactionCount > 0 || movementCount > 0) {
-      await this.prisma.account.update({
-        where: { id },
-        data: { isActive: false },
+      await this.prisma.$transaction(async (tx) => {
+        // Optimistic lock: the balance may have changed since we read it
+        const { count } = await tx.account.updateMany({
+          where: { id, isActive: true, balance: 0 },
+          data: { isActive: false },
+        });
+
+        if (count === 0) {
+          throw new ConflictException('Account changed concurrently, please retry');
+        }
+
+        await recordMovement(tx, {
+          userId,
+          type: MovementType.CLOSING,
+          accountId: id,
+          amount: new Decimal(0),
+          currency: account.currency,
+        });
       });
     } else {
+      // No history worth keeping: deleting the account also removes its OPENING
       await this.prisma.account.delete({ where: { id } });
     }
   }

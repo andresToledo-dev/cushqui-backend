@@ -159,5 +159,81 @@ describe("Account Flow (e2e)", () => {
       expect(res.body.name).toBe("Renamed Account");
       expect(res.body.balance).toBe(30);
     });
+
+    it("should reject closing through PATCH", async () => {
+      await request(app.getHttpServer())
+        .patch(`/api/v1/accounts/${accountId}`)
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send({ isActive: false })
+        .expect(400);
+    });
+
+    it("should reject closing an account with balance", async () => {
+      await request(app.getHttpServer())
+        .delete(`/api/v1/accounts/${accountId}`)
+        .set("Authorization", `Bearer ${accessToken}`)
+        .expect(409);
+    });
+
+    it("should close the account at 0 and record a single CLOSING", async () => {
+      await request(app.getHttpServer())
+        .post(`/api/v1/accounts/${accountId}/adjustments`)
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send({ balance: 0 })
+        .expect(201);
+
+      // The second DELETE changes nothing
+      for (let i = 0; i < 2; i++) {
+        await request(app.getHttpServer())
+          .delete(`/api/v1/accounts/${accountId}`)
+          .set("Authorization", `Bearer ${accessToken}`)
+          .expect(204);
+      }
+
+      const account = await request(app.getHttpServer())
+        .get(`/api/v1/accounts/${accountId}`)
+        .set("Authorization", `Bearer ${accessToken}`)
+        .expect(200);
+      expect(account.body.isActive).toBe(false);
+
+      const movements = await request(app.getHttpServer())
+        .get(`/api/v1/movements?accountId=${accountId}&type=CLOSING`)
+        .set("Authorization", `Bearer ${accessToken}`)
+        .expect(200);
+      expect(movements.body.data).toHaveLength(1);
+      expect(movements.body.data[0]).toMatchObject({ type: "CLOSING", amount: 0 });
+    });
+
+    it("should reject balance changes on the closed account", async () => {
+      await request(app.getHttpServer())
+        .post("/api/v1/transactions")
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send({ accountId, amount: 10, currency: "EUR", type: "EXPENSE", transactionDate: new Date().toISOString() })
+        .expect(400);
+
+      await request(app.getHttpServer())
+        .post(`/api/v1/accounts/${accountId}/adjustments`)
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send({ balance: 10 })
+        .expect(400);
+    });
+
+    it("should delete an account with no history, leaving no trace", async () => {
+      const created = await request(app.getHttpServer())
+        .post("/api/v1/accounts")
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send({ name: "Empty Account", type: "CASH", currency: "EUR" })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .delete(`/api/v1/accounts/${created.body.id}`)
+        .set("Authorization", `Bearer ${accessToken}`)
+        .expect(204);
+
+      await request(app.getHttpServer())
+        .get(`/api/v1/accounts/${created.body.id}`)
+        .set("Authorization", `Bearer ${accessToken}`)
+        .expect(404);
+    });
   });
 });

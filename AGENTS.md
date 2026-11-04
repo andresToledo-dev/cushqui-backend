@@ -24,7 +24,7 @@ npm run start:dev     # desarrollo con hot reload (BD dev)
 npm run build         # build de producción
 
 # Tests
-npm test              # tests unitarios (164 tests, sin BD)
+npm test              # tests unitarios (183 tests, sin BD)
 npm run test:e2e      # tests e2e (BD dev + seed; abortan si apuntan a prod)
 npm run test:cov      # coverage
 
@@ -130,19 +130,20 @@ common/         # Guards, decorators, filters
 
 ### Visibilidad de cuentas
 
-- `visibleInList` (mostrar en la lista de cuentas) y `balanceVisible` (mostrar el saldo): booleanos, `true` por defecto, se cambian con `PATCH /accounts/:id`. Solo aceptan booleanos reales, igual que `isActive` de cuentas: `enableImplicitConversion` convierte cualquier texto no vacío en `true` (también `"false"`), por eso conservan el valor original con `@Transform`
+- `visibleInList` (mostrar en la lista de cuentas) y `balanceVisible` (mostrar el saldo): booleanos, `true` por defecto, se cambian con `PATCH /accounts/:id`. Solo aceptan booleanos reales: `enableImplicitConversion` convierte cualquier texto no vacío en `true` (también `"false"`), por eso conservan el valor original con `@Transform`
 - Son preferencias de presentación que aplica el frontend: la API **no filtra ni oculta nada** por ellas. `GET /accounts` devuelve también las ocultas (para poder volver a mostrarlas), y dashboard y statistics siguen contándolas
 
 ### Movimientos de cuenta (`account_movements`, Crítico)
 
-- Una fila por evento, tipo `MovementType`: `OPENING`, `ADJUSTMENT`, `TRANSFER`. Se crean con `recordMovement(tx, data)` de `src/movements/movement.util.ts`
+- Una fila por evento, tipo `MovementType`: `OPENING`, `ADJUSTMENT`, `TRANSFER`, `CLOSING`. Se crean con `recordMovement(tx, data)` de `src/movements/movement.util.ts`
 - **OPENING**: al crear la cuenta, **siempre** (incluso con 0 €), `amount = balance` inicial. `openingDate` opcional (por defecto ahora) para cuentas históricas
 - `POST /accounts/:id/adjustments` acepta `date` opcional (por defecto ahora)
 - **ADJUSTMENT**: `POST /accounts/:id/adjustments { balance, note? }`. `amount` **con signo** (+10 / -10) = nuevo − actual, más `balanceBefore`/`balanceAfter`. Bloqueo optimista (`updateMany where balance = actual`) → 409 si cambió en paralelo. Delta 0 no registra nada
 - **TRANSFER**: una sola fila (`accountId` = origen, `toAccountId` = destino, `amount` positivo). Nunca dos filas ±
 - **Solo TRANSFER es editable** (`PATCH /transfers/:id`): revertir efecto viejo + aplicar nuevo + actualizar la misma fila, **sin registrar la edición**. OPENING y ADJUSTMENT son inmutables; no hay DELETE de movimientos
 - Historial: `GET /movements?accountId=&type=&from=&to=&page=&limit=`; el filtro `accountId` busca en origen **o** destino
-- Una cuenta con movimientos distintos de OPENING solo se puede desactivar (soft delete), no borrar
+- **Cerrar una cuenta** (`DELETE /accounts/:id`, única vía; `PATCH` no acepta `isActive`): saldo distinto de 0 → 409. Con transacciones o movimientos distintos de OPENING: queda inactiva y registra un **CLOSING** (`amount` 0), en el mismo `$transaction`. Sin historial: borrado real, sin CLOSING. Ya cerrada: 204 sin hacer nada. El cierre es definitivo
+- **Cuenta cerrada**: nada puede cambiar su saldo (`assertAccountsActive` de `src/accounts/account-balance.util.ts`, 400 `Account is inactive`): crear, borrar o editar importe, tipo o cuenta de transacciones y transferencias, ajustes e imports. Siguen permitidos clasificar y editar lo que no afecta al saldo. Cualquier operación nueva que cambie saldos debe llamarlo
 
 ## Ambientes y despliegue
 
@@ -177,7 +178,7 @@ Variables (ver `.env.example`): `DATABASE_URL`, `DIRECT_URL`, `JWT_SECRET`, `JWT
 
 | Tipo Test | Comando            | Notas                                               |
 | --------- | ------------------ | --------------------------------------------------- |
-| Unit      | `npm test`         | 164 tests, no requiere BD (los corre la CI en cada PR) |
+| Unit      | `npm test`         | 183 tests, no requiere BD (los corre la CI en cada PR) |
 | E2E       | `npm run test:e2e` | BD dev con seed; abortan si `DATABASE_URL` contiene `PROD_DB_REF` |
 | Coverage  | `npm run test:cov` | Salida en `coverage/`                               |
 

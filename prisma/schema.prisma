@@ -36,6 +36,7 @@ enum MovementType {
   OPENING
   ADJUSTMENT
   TRANSFER
+  CLOSING
 }
 
 enum TransactionStatus {
@@ -202,13 +203,13 @@ model AccountMovement {
   userId        String
   user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   type          MovementType
-  /// OPENING/ADJUSTMENT: the account. TRANSFER: source account.
+  /// OPENING/ADJUSTMENT/CLOSING: the account. TRANSFER: source account.
   accountId     String
   account       Account      @relation("MovementFromAccount", fields: [accountId], references: [id], onDelete: Cascade)
   /// TRANSFER only: destination account.
   toAccountId   String?
   toAccount     Account?     @relation("MovementToAccount", fields: [toAccountId], references: [id], onDelete: Cascade)
-  /// OPENING/TRANSFER: positive. ADJUSTMENT: signed (+10 / -10).
+  /// OPENING/TRANSFER: positive. ADJUSTMENT: signed (+10 / -10). CLOSING: always 0.
   amount        Decimal      @db.Decimal(19, 4)
   /// ADJUSTMENT only.
   balanceBefore Decimal?     @db.Decimal(19, 4)

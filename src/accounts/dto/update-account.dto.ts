@@ -10,13 +10,8 @@ const KeepRawValue = () => Transform(({ obj, key }) => obj[key]);
 
 // The balance can only change through POST /accounts/:id/adjustments, so every change is recorded.
 // openingDate only makes sense when the account (and its OPENING movement) is created.
+// isActive is not here: an account is only closed through DELETE, and that is final.
 export class UpdateAccountDto extends PartialType(OmitType(CreateAccountDto, ['balance', 'openingDate'] as const)) {
-  @ApiProperty({ example: true, required: false })
-  @IsOptional()
-  @KeepRawValue()
-  @IsBoolean()
-  isActive?: boolean;
-
   @ApiProperty({ example: true, required: false, description: 'Show the account in the accounts list' })
   @IsOptional()
   @KeepRawValue()

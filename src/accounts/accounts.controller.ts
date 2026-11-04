@@ -70,10 +70,11 @@ export class AccountsController {
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Delete account (soft delete if has transactions)' })
+  @ApiOperation({ summary: 'Close account (balance must be 0). With history it stays inactive and records a CLOSING movement; without history it is deleted' })
   @ApiParam({ name: 'id', format: 'uuid' })
-  @ApiResponse({ status: 204, description: 'Account deleted' })
+  @ApiResponse({ status: 204, description: 'Account closed or deleted' })
   @ApiResponse({ status: 404, description: 'Account not found' })
+  @ApiResponse({ status: 409, description: 'Account balance is not 0' })
   async delete(@CurrentUser('id') userId: string, @Param('id') id: string): Promise<void> {
     return this.accountsService.delete(userId, id);
   }

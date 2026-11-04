@@ -8,7 +8,7 @@ import { TransactionResponseDto } from './dto/transaction-response.dto';
 import { PaginatedResponseDto, PaginatedMetaDto } from './dto/paginated-response.dto';
 import { TransactionType, TransactionStatus, TransactionSource, Prisma } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
-import { adjustBalance, balanceDelta } from '../accounts/account-balance.util';
+import { adjustBalance, assertAccountsActive, balanceDelta } from '../accounts/account-balance.util';
 
 @Injectable()
 export class TransactionsService {
@@ -56,6 +56,8 @@ export class TransactionsService {
     if (!account || account.userId !== userId) {
       throw new NotFoundException('Account not found');
     }
+
+    await assertAccountsActive(this.prisma, [dto.accountId]);
 
     const categoryId = dto.categoryId || null;
     const subcategoryId = dto.subcategoryId || null;
@@ -184,6 +186,13 @@ export class TransactionsService {
     const newType = dto.type ?? transaction.type;
     const newAccountId = dto.accountId ?? transaction.accountId;
 
+    // Forms resend amount and type: only a real change counts, so old transactions of a closed account stay editable
+    const balanceChanged =
+      newAccountId !== transaction.accountId || !balanceDelta(newType, newAmount).equals(balanceDelta(oldType, oldAmount));
+    if (balanceChanged) {
+      await assertAccountsActive(this.prisma, [transaction.accountId, newAccountId]);
+    }
+
     // Validate the classification the transaction ends up with (e.g. changing EXPENSE → INCOME
     // requires an INCOME category). A new category without subcategory drops the old subcategory.
     const categoryChanged = dto.categoryId !== undefined && (dto.categoryId || null) !== transaction.categoryId;
@@ -216,7 +225,7 @@ export class TransactionsService {
         },
       });
 
-      if (dto.amount !== undefined || dto.type !== undefined || newAccountId !== transaction.accountId) {
+      if (balanceChanged) {
         // Revert the old effect on the old account, then apply the new effect on the (possibly new) account
         await adjustBalance(tx, transaction.accountId, balanceDelta(oldType, oldAmount).neg());
         await adjustBalance(tx, newAccountId, balanceDelta(newType, newAmount));
@@ -236,6 +245,8 @@ export class TransactionsService {
     if (!transaction || transaction.userId !== userId || transaction.deletedAt !== null) {
       throw new NotFoundException('Transaction not found');
     }
+
+    await assertAccountsActive(this.prisma, [transaction.accountId]);
 
     await this.prisma.$transaction(async (tx) => {
       await tx.transaction.update({

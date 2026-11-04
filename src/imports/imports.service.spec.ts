@@ -37,6 +37,7 @@ describe('ImportsService', () => {
       findFirst: jest.fn(),
       findMany: jest.fn(),
       update: jest.fn(),
+      count: jest.fn(),
     },
     $transaction: jest.fn((callback) => callback(mockTx)),
   };
@@ -246,6 +247,33 @@ describe('ImportsService', () => {
         expect(mockTx.account.update).not.toHaveBeenCalled();
         expect(mockPrisma.importEvent.create.mock.calls[0][0].data.finalDecision).toBe(FinalDecision.NA);
       });
+    });
+  });
+
+  describe('importFromNotification on a closed account', () => {
+    const date = '2026-10-02T12:00:00Z';
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      mockPrisma.importEvent.findUnique.mockResolvedValue(null);
+      mockPrisma.account.count.mockReset();
+      mockPrisma.account.count.mockResolvedValue(1);
+    });
+
+    it('should reject a message that would create a transaction, without recording it', async () => {
+      await expect(
+        service.importFromNotification(userId, integrationId, accountId, defaultWords, { message: 'Has enviado 15.90€ a Juan', date }),
+      ).rejects.toThrow('Account is inactive');
+
+      expect(mockTx.transaction.create).not.toHaveBeenCalled();
+      expect(mockPrisma.importEvent.create).not.toHaveBeenCalled();
+    });
+
+    it('should still record an N/A message', async () => {
+      await service.importFromNotification(userId, integrationId, accountId, defaultWords, { message: 'Tu código es 15.90€', date });
+
+      expect(mockPrisma.account.count).not.toHaveBeenCalled();
+      expect(mockPrisma.importEvent.create.mock.calls[0][0].data.finalDecision).toBe(FinalDecision.NA);
     });
   });
 

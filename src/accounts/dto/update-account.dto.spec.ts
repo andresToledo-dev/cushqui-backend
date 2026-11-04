@@ -20,11 +20,14 @@ describe('UpdateAccountDto', () => {
     expect(dto.visibleInList).toBeUndefined();
   });
 
+  it.each([[true], [false]])('should reject isActive = %s: an account is only closed through DELETE', async (isActive) => {
+    await expect(validate({ isActive })).rejects.toThrow(BadRequestException);
+  });
+
   it.each([
     ['visibleInList', 'false'],
     ['balanceVisible', 'no'],
     ['visibleInList', 1],
-    ['isActive', 'false'],
   ])('should reject %s = %j: only real booleans are valid', async (field, value) => {
     await expect(validate({ [field]: value })).rejects.toThrow(BadRequestException);
   });
