@@ -35,13 +35,23 @@ describe('Import to Transaction Flow (e2e)', () => {
       console.log('✅ Access token obtained:', accessToken.substring(0, 20) + '...');
     });
 
-    it('should create a new integration named "notification_test"', async () => {
+    it('should reject a NOTIFICATION integration without expense/income words', async () => {
+      await request(app.getHttpServer())
+        .post('/api/v1/integrations')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ name: 'notification_test', type: 'NOTIFICATION' })
+        .expect(400);
+    });
+
+    it('should create a new integration named "notification_test" with its own words', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/v1/integrations')
         .set('Authorization', `Bearer ${accessToken}`)
         .send({
           name: 'notification_test',
           type: 'NOTIFICATION',
+          expenseWords: 'has enviado, pagaste',
+          incomeWords: 'has recibido,te depositaron',
         })
         .expect(201);
 
@@ -49,6 +59,8 @@ describe('Import to Transaction Flow (e2e)', () => {
       expect(res.body.name).toBe('notification_test');
       expect(res.body.type).toBe('NOTIFICATION');
       expect(res.body.plainToken).toBeDefined();
+      expect(res.body.expenseWords).toBe('has enviado,pagaste');
+      expect(res.body.incomeWords).toBe('has recibido,te depositaron');
 
       integrationId = res.body.id;
       integrationToken = res.body.plainToken;
@@ -154,6 +166,58 @@ describe('Import to Transaction Flow (e2e)', () => {
 
     it('should verify import events were created with correct finalDecision', async () => {
       console.log('✅ Import events verified via transaction creation');
+    });
+  });
+
+  describe('Expense/income words of the integration', () => {
+    const importMessage = (message: string) =>
+      request(app.getHttpServer())
+        .post('/api/v1/imports/notification')
+        .set('Authorization', `Bearer ${integrationToken}`)
+        .send({ message, date: testDate })
+        .expect(200);
+
+    it('should classify with any of its words, case-insensitively', async () => {
+      const expense = await importMessage(`PAGASTE ${expenseAmount + 1}€ en Bar Central`);
+      expect(expense.body.created).toBe(true);
+
+      const income = await importMessage(`Te depositaron ${incomeAmount + 1}€ de Cliente`);
+      expect(income.body.created).toBe(true);
+
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/transactions')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .query({ accountId, limit: 50 })
+        .expect(200);
+      expect(res.body.data.find((tx: any) => tx.id === expense.body.transactionId).type).toBe('EXPENSE');
+      expect(res.body.data.find((tx: any) => tx.id === income.body.transactionId).type).toBe('INCOME');
+    });
+
+    it('should record N/A without a transaction when the message has words of both lists', async () => {
+      const res = await importMessage(`Pagaste 3€ y te depositaron 3€ (${testRunId})`);
+      expect(res.body).toMatchObject({ success: true, created: false });
+      expect(res.body.transactionId).toBeUndefined();
+    });
+
+    it('should apply new words after PATCH, and reject an empty list', async () => {
+      await request(app.getHttpServer())
+        .patch(`/api/v1/integrations/${integrationId}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ expenseWords: ' , ' })
+        .expect(400);
+
+      const patched = await request(app.getHttpServer())
+        .patch(`/api/v1/integrations/${integrationId}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ expenseWords: 'Caixa Geral' })
+        .expect(200);
+      expect(patched.body).toMatchObject({ expenseWords: 'Caixa Geral', incomeWords: 'has recibido,te depositaron' });
+
+      // "pagaste" is no longer an expense word; "Caixa Geral" is
+      const old = await importMessage(`Pagaste 4€ en Bar (${testRunId})`);
+      expect(old.body.created).toBe(false);
+      const caixa = await importMessage(`Caixa Geral: compra de 5€ en Loja (${testRunId})`);
+      expect(caixa.body.created).toBe(true);
     });
   });
 });

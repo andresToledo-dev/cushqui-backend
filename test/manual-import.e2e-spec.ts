@@ -65,7 +65,7 @@ describe("Manual Import Flow (e2e)", () => {
       const notificationRes = await request(app.getHttpServer())
         .post("/api/v1/integrations")
         .set("Authorization", `Bearer ${accessToken}`)
-        .send({ name: "manual_test_notification", type: "NOTIFICATION", accountId })
+        .send({ name: "manual_test_notification", type: "NOTIFICATION", accountId, expenseWords: "has enviado", incomeWords: "has recibido" })
         .expect(201);
       notificationToken = notificationRes.body.plainToken;
       integrationIds.push(notificationRes.body.id);
