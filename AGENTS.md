@@ -55,6 +55,17 @@ health/         # Health check
 common/         # Guards, decorators, filters
 ```
 
+## Seguimiento por rama
+
+- Con cada requerimiento nuevo, comprueba la rama actual (`git branch --show-current`) y documenta en `docs/<rama>/Following.md`; crea la carpeta si no existe. `MEMORY.md` es global; `Following.md` solo cubre esa rama, hasta cerrarla
+- `docs/` es local: **nunca se versiona** (está en `.gitignore`)
+- `Following.md` es breve y fácil de seguir, no un relato largo:
+  - Funcionalidades que trata la rama, con una explicación corta
+  - Tareas ligadas a sus commits, p. ej. `T01: Add visibility account: archivos que cambiamos y lógica que implementamos`
+  - Cambios importantes, si los hay
+- Si un cambio altera una tarea anterior de la rama, actualiza esa tarea
+- **Commits**: cuando el usuario aprueba una tarea, va en un commit `TXX: comentario corto en inglés`. `XX` es el número de la tarea, con dos dígitos, y vuelve a `T01` en cada rama
+
 ## Memoria para el agente
 
 - Al empezar, lee `MEMORY.md` para conocer el estado del proyecto y las decisiones tomadas

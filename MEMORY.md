@@ -4,7 +4,8 @@
 - **Tests**: unitarios 158/158 ✅ (2026-11-04) · e2e 98/98 ✅ (2026-10-28). En dev conviven `test@roto.com` y el seed `test@cushqui.local` (ADMIN) + usuarios de e2e
 - Repo en GitHub (`main` producción en Vercel región `dub1`, `dev` por defecto). Producción: `https://cushqui-backend.vercel.app`
 - Importación Excel en dev completada (`test@roto.com`, luego con datos de prueba). **Carga en producción** (`--prod`, fusionado en `main`): pendiente de que el usuario se registre en la app y lance `npm run import:prod:execute` (~40 min estimados). Tras fusionar la rama de invitaciones, antes: `npm run invite:admin:prod <email>` y registrarse con ese código
-- Fusionados en `dev`/`main`: invitaciones, `NOTIFICATION`, token de integración SHA256, e2e con cuentas propias. **Rama `feature/notification-words`** (sin fusionar): `expenseWords`/`incomeWords` por integración NOTIFICATION (obligatorias; ambas listas → N/A). Migración `…_integration_words` **aplicada en dev**. Frontend: pedir y editar las dos listas
+- Fusionados en `dev`/`main`: invitaciones, `NOTIFICATION`, token de integración SHA256, e2e con cuentas propias, `expenseWords`/`incomeWords` por integración NOTIFICATION (obligatorias; ambas listas → N/A). Frontend: pedir y editar las dos listas
+- **Rama actual `feature/interface-chages`**: seguimiento en `docs/feature/interface-chages/Following.md` (local)
 - Pendiente: decidir la estrategia de e2e (propuesta: BD de test aparte + usuario propio por suite)
 - `Task1.md` eliminado del historial; quedan `refs/original` locales y copia en `%TEMP%\cushqui-history-backup-20261014-191722\` (limpieza pendiente, ofrecida)
 
@@ -29,6 +30,7 @@
 | Token de integración en SHA256 (no bcrypt) | Es aleatorio de 256 bits: no necesita hash lento y permite buscarlo por índice. Tokens antiguos de prod sin uso (confirmado por el usuario). |
 | Registro por invitación: códigos en BD (hash SHA256, un uso, 7 días, email opcional), admin por `User.role` | Elegido por el usuario. Código validado antes que el email (no revela emails); ADMIN solo vía script (bootstrap). |
 | Editar transacción: se valida el resultado final (tipo + categoría) y el saldo se revierte y reaplica | Pedido del usuario: gasto 20 → ingreso 20 lleva el saldo de 60 a 100. |
+| Historial por rama en `docs/<rama>/Following.md` (sin versionar) y commits `TXX` al aprobar cada tarea | Pedido del usuario: `MEMORY.md` es global; `Following.md` guía los cambios de una rama hasta cerrarla. Regla en `AGENTS.md`. |
 
 ## Errores a evitar
 - Al cambiar de rama o tras un merge con cambios en `schema.prisma`: parar `start:dev` y `npx prisma generate` (un generate con EPERM deja tipos viejos → errores de compilación). El seed de una rama vieja falla contra la BD migrada (categorías `userId` null).
