@@ -5,7 +5,7 @@ import { CreateIntegrationDto } from './dto/create-integration.dto';
 import { UpdateIntegrationDto } from './dto/update-integration.dto';
 import { IntegrationResponseDto } from './dto/integration-response.dto';
 import { generateIntegrationToken, hashIntegrationToken } from './integration-token.util';
-import { normalizeWords } from './notification-words.util';
+import { findWordsRuleViolation, normalizeWords } from './notification-words.util';
 
 /** Número de import events recibidos con cada integración. */
 const WITH_IMPORT_COUNT = { _count: { select: { importEvents: true } } } as const;
@@ -58,6 +58,8 @@ export class IntegrationsService {
       }
       const words = normalizeWords(dto[field]!);
       if (!words) throw new BadRequestException(`${field} must contain at least one word`);
+      const violation = findWordsRuleViolation(words);
+      if (violation) throw new BadRequestException(`${field}: ${violation}`);
       result[field] = words;
     }
     return result;

@@ -62,6 +62,9 @@ describe('IntegrationsService', () => {
       ['without expenseWords', { incomeWords: 'has recibido' }],
       ['without incomeWords', { expenseWords: 'has enviado' }],
       ['with an empty list', { expenseWords: ' , ', incomeWords: 'has recibido' }],
+      ['with more than 5 phrases', { expenseWords: 'a,b,c,d,e,f', incomeWords: 'has recibido' }],
+      ['with a phrase of more than 4 words', { expenseWords: 'has enviado', incomeWords: 'te han enviado mucho dinero' }],
+      ['with a word of more than 15 characters', { expenseWords: 'a'.repeat(16), incomeWords: 'has recibido' }],
     ])('should reject a NOTIFICATION integration %s', async (_label, words) => {
       await expect(service.create(userId, { name: 'N', type: IntegrationType.NOTIFICATION, ...words })).rejects.toThrow(
         BadRequestException,
@@ -99,6 +102,17 @@ describe('IntegrationsService', () => {
 
       await expect(service.update(userId, 'integration-id', { expenseWords: ' ' })).rejects.toThrow(BadRequestException);
       expect(mockPrisma.integration.update).not.toHaveBeenCalled();
+    });
+
+    it('should apply the limits after normalizing: repeats and empty entries do not count', async () => {
+      mockPrisma.integration.findUnique.mockResolvedValue(row());
+
+      await service.update(userId, 'integration-id', { expenseWords: 'a,A,,b,c,d,e,  ' });
+      expect(mockPrisma.integration.update.mock.calls[0][0].data.expenseWords).toBe('a,b,c,d,e');
+
+      await expect(service.update(userId, 'integration-id', { expenseWords: 'a,b,c,d,e,f' })).rejects.toThrow(
+        'expenseWords: must contain at most 5 phrases',
+      );
     });
 
     it('should reject words on a MANUAL integration', async () => {

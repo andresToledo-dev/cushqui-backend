@@ -1,5 +1,5 @@
 import { FinalDecision } from '@prisma/client';
-import { classifyMessage, normalizeWords, parseWords } from './notification-words.util';
+import { classifyMessage, findWordsRuleViolation, normalizeWords, parseWords } from './notification-words.util';
 
 describe('notification-words.util', () => {
   describe('normalizeWords', () => {
@@ -9,6 +9,25 @@ describe('notification-words.util', () => {
 
     it('should return an empty string when there are no words', () => {
       expect(normalizeWords(' , ,')).toBe('');
+    });
+  });
+
+  describe('findWordsRuleViolation', () => {
+    it.each([
+      ['one word', 'pagaste'],
+      ['5 phrases', 'a,b,c,d,e'],
+      ['4 words in a phrase', 'te ha enviado dinero'],
+      ['a word of 15 characters', 'a'.repeat(15)],
+    ])('should accept %s', (_label, words) => {
+      expect(findWordsRuleViolation(words)).toBeNull();
+    });
+
+    it.each([
+      ['6 phrases', 'a,b,c,d,e,f', 'at most 5 phrases'],
+      ['5 words in a phrase', 'te ha enviado mucho dinero', 'at most 4 words'],
+      ['a word of 16 characters', `compra ${'a'.repeat(16)}`, 'at most 15 characters'],
+    ])('should reject %s', (_label, words, message) => {
+      expect(findWordsRuleViolation(words)).toContain(message);
     });
   });
 

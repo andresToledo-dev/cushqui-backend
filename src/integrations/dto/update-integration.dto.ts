@@ -18,13 +18,13 @@ export class UpdateIntegrationDto {
   @IsString()
   accountId?: string | null;
 
-  @ApiProperty({ example: 'has enviado,has gastado', required: false, description: 'NOTIFICATION only; cannot be empty' })
+  @ApiProperty({ example: 'has enviado,has gastado', required: false, description: 'NOTIFICATION only; cannot be empty (max 5 phrases, 4 words per phrase, 15 characters per word)' })
   @IsOptional()
   @IsString()
   @MaxLength(500)
   expenseWords?: string;
 
-  @ApiProperty({ example: 'has recibido,te ha enviado dinero', required: false, description: 'NOTIFICATION only; cannot be empty' })
+  @ApiProperty({ example: 'has recibido,te ha enviado dinero', required: false, description: 'NOTIFICATION only; cannot be empty (max 5 phrases, 4 words per phrase, 15 characters per word)' })
   @IsOptional()
   @IsString()
   @MaxLength(500)

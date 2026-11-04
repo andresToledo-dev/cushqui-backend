@@ -18,6 +18,30 @@ export function normalizeWords(input: string): string {
   return words.join(',');
 }
 
+/** Limits of a list: at most 5 phrases, each of at most 4 words of at most 15 characters. */
+export const MAX_PHRASES = 5;
+export const MAX_WORDS_PER_PHRASE = 4;
+export const MAX_WORD_LENGTH = 15;
+
+/** Checks an already normalized list. Returns what is wrong with it, or null if it is valid. */
+export function findWordsRuleViolation(normalized: string): string | null {
+  const phrases = normalized.split(',');
+  if (phrases.length > MAX_PHRASES) {
+    return `must contain at most ${MAX_PHRASES} phrases`;
+  }
+  for (const phrase of phrases) {
+    const words = phrase.split(' ');
+    if (words.length > MAX_WORDS_PER_PHRASE) {
+      return `"${phrase}" must have at most ${MAX_WORDS_PER_PHRASE} words`;
+    }
+    const longWord = words.find((word) => word.length > MAX_WORD_LENGTH);
+    if (longWord) {
+      return `"${longWord}" must have at most ${MAX_WORD_LENGTH} characters`;
+    }
+  }
+  return null;
+}
+
 /** Stored list → lowercase words ready to compare. */
 export function parseWords(stored: string | null | undefined): string[] {
   return stored ? normalizeWords(stored).toLowerCase().split(',').filter(Boolean) : [];
