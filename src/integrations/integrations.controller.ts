@@ -2,6 +2,7 @@ import { Controller, Get, Post, Patch, Delete, Param, Body, UseGuards } from '@n
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
 import { IntegrationsService } from './integrations.service';
 import { CreateIntegrationDto } from './dto/create-integration.dto';
+import { UpdateIntegrationDto } from './dto/update-integration.dto';
 import { IntegrationResponseDto } from './dto/integration-response.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 
@@ -14,6 +15,7 @@ export class IntegrationsController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Create a new integration' })
   @ApiResponse({ status: 201, type: IntegrationResponseDto })
+  @ApiResponse({ status: 400, description: 'NOTIFICATION without expenseWords/incomeWords, or MANUAL with them' })
   @ApiResponse({ status: 404, description: 'Account not found' })
   async create(
     @CurrentUser('id') userId: string,
@@ -42,14 +44,14 @@ export class IntegrationsController {
 
   @Patch(':id')
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Update integration' })
+  @ApiOperation({ summary: 'Update integration (expense/income words: NOTIFICATION only, never empty)' })
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiResponse({ status: 200, type: IntegrationResponseDto })
   @ApiResponse({ status: 404, description: 'Integration not found' })
   async update(
     @CurrentUser('id') userId: string,
     @Param('id') id: string,
-    @Body() dto: { name?: string; isActive?: boolean; accountId?: string | null },
+    @Body() dto: UpdateIntegrationDto,
   ): Promise<IntegrationResponseDto> {
     return this.integrationsService.update(userId, id, dto);
   }

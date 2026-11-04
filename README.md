@@ -242,7 +242,9 @@ curl -X POST http://localhost:3000/api/v1/integrations \
   -d '{
     "name": "iPhone Shortcut",
     "type": "NOTIFICATION",
-    "accountId": "revolut-account"
+    "accountId": "revolut-account",
+    "expenseWords": "has enviado,has gastado",
+    "incomeWords": "has recibido,te ha enviado dinero"
   }'
 ```
 

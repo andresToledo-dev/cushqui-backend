@@ -9,7 +9,14 @@ import { IntegrationToken } from '../common/decorators/integration-token.decorat
 import { IntegrationAuthGuard } from '../common/guards/integration-auth.guard';
 import { Public } from '../common/decorators/public.decorator';
 
-type AuthenticatedIntegration = { id: string; userId: string; accountId: string | null; type: IntegrationType };
+type AuthenticatedIntegration = {
+  id: string;
+  userId: string;
+  accountId: string | null;
+  type: IntegrationType;
+  expenseWords: string | null;
+  incomeWords: string | null;
+};
 
 @ApiTags('imports')
 @Controller('imports')
@@ -41,6 +48,7 @@ export class ImportsController {
       integration.userId,
       integration.id,
       integration.accountId,
+      { expenseWords: integration.expenseWords, incomeWords: integration.incomeWords },
       dto,
     );
   }

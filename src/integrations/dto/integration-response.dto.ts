@@ -14,6 +14,12 @@ export class IntegrationResponseDto {
   @ApiProperty({ example: 'uuid-of-account', required: false })
   accountId?: string;
 
+  @ApiProperty({ example: 'has enviado,has gastado', nullable: true, description: 'NOTIFICATION only (null for MANUAL)' })
+  expenseWords: string | null;
+
+  @ApiProperty({ example: 'has recibido,te ha enviado dinero', nullable: true, description: 'NOTIFICATION only (null for MANUAL)' })
+  incomeWords: string | null;
+
   @ApiProperty({ example: true })
   isActive: boolean;
 

@@ -7,6 +7,10 @@ import { TransactionSource, TransactionStatus, TransactionType, FinalDecision, I
 import { Decimal } from '@prisma/client/runtime/library';
 import * as crypto from 'crypto';
 import { adjustBalance, balanceDelta } from '../accounts/account-balance.util';
+import { classifyMessage } from '../integrations/notification-words.util';
+
+/** Words of the NOTIFICATION integration that classify a message as expense / income. */
+export type NotificationWords = { expenseWords: string | null; incomeWords: string | null };
 
 @Injectable()
 export class ImportsService {
@@ -16,10 +20,11 @@ export class ImportsService {
     userId: string,
     integrationId: string,
     accountId: string,
+    words: NotificationWords,
     dto: NotificationImportDto,
   ): Promise<ImportResponseDto> {
-    // Parse the message to extract amount and determine transaction type
-    const { amount, finalDecision, merchant } = this.parseMessage(dto.message);
+    // Parse the message to extract amount and determine transaction type (with the integration's words)
+    const { amount, finalDecision, merchant } = this.parseMessage(dto.message, words);
 
     // If no valid amount found, still create ImportEvent with N/A decision
     if (amount === null) {
@@ -274,26 +279,18 @@ export class ImportsService {
     });
   }
 
-  private parseMessage(message: string): { amount: number | null; finalDecision: FinalDecision; merchant: string } {
+  private parseMessage(
+    message: string,
+    words: NotificationWords,
+  ): { amount: number | null; finalDecision: FinalDecision; merchant: string } {
     // Extract amount - number before € symbol
     const amountMatch = message.match(/(\d+[.,]?\d*)\s*€/);
     const amount = amountMatch ? parseFloat(amountMatch[1].replace(',', '.')) : null;
 
-    // Determine transaction type based on keywords
-    const lowerMessage = message.toLowerCase();
+    // Expense or income by the integration's words; words of both lists (or none) → NA
+    const finalDecision = classifyMessage(message, words.expenseWords, words.incomeWords);
 
-    const expenseKeywords = ['has enviado', 'has gastado'];
-    const incomeKeywords = ['has recibido', 'te ha enviado dinero'];
-
-    let finalDecision: FinalDecision = FinalDecision.NA;
-
-    if (expenseKeywords.some((keyword) => lowerMessage.includes(keyword))) {
-      finalDecision = FinalDecision.EXPENSE;
-    } else if (incomeKeywords.some((keyword) => lowerMessage.includes(keyword))) {
-      finalDecision = FinalDecision.INCOME;
-    }
-
-    // Extract merchant - try to get the name after "a " or "de " or similar patterns
+    // Extract merchant (unchanged: it is part of the fingerprint, changing it would break deduplication) - try to get the name after "a " or "de " or similar patterns
     let merchant = 'unknown';
     const merchantPatterns = [
       // More specific patterns for Spanish banking notifications (must come first)
