@@ -17,6 +17,7 @@ describe('AccountsService', () => {
       update: jest.fn(),
       updateMany: jest.fn(),
       delete: jest.fn(),
+      count: jest.fn(),
     },
     accountMovement: {
       create: jest.fn(),
@@ -41,6 +42,8 @@ describe('AccountsService', () => {
     currency: 'EUR',
     balance: new Decimal(1000),
     isActive: true,
+    visibleInList: true,
+    balanceVisible: true,
     icon: null,
     color: null,
     createdAt: new Date(),
@@ -172,6 +175,18 @@ describe('AccountsService', () => {
       expect(mockPrisma.account.update.mock.calls[0][0].data).not.toHaveProperty('balance');
       expect(mockPrisma.accountMovement.create).not.toHaveBeenCalled();
     });
+
+    it('should update and return each visibility flag on its own', async () => {
+      mockPrisma.account.findUnique.mockResolvedValue(buildAccount());
+      mockPrisma.account.update.mockResolvedValue(buildAccount({ balanceVisible: false }));
+
+      const result = await service.update(userId, accountId, { balanceVisible: false });
+
+      const { data } = mockPrisma.account.update.mock.lastCall[0];
+      expect(data.balanceVisible).toBe(false);
+      expect(data.visibleInList).toBeUndefined();
+      expect(result).toMatchObject({ visibleInList: true, balanceVisible: false });
+    });
   });
 
   describe('adjust', () => {
@@ -250,7 +265,7 @@ describe('AccountsService', () => {
 
   describe('delete', () => {
     it('should hard delete an account that only has its OPENING', async () => {
-      mockPrisma.account.findUnique.mockResolvedValue(buildAccount());
+      mockPrisma.account.findUnique.mockResolvedValue(buildAccount({ balance: new Decimal(0) }));
       mockPrisma.transaction.count.mockResolvedValue(0);
       mockPrisma.accountMovement.count.mockResolvedValue(0);
 
@@ -266,17 +281,91 @@ describe('AccountsService', () => {
     });
 
     it('should soft delete an account with adjustments or transfers', async () => {
-      mockPrisma.account.findUnique.mockResolvedValue(buildAccount());
+      mockPrisma.account.findUnique.mockResolvedValue(buildAccount({ balance: new Decimal(0) }));
       mockPrisma.transaction.count.mockResolvedValue(0);
       mockPrisma.accountMovement.count.mockResolvedValue(1);
+      mockPrisma.account.updateMany.mockResolvedValue({ count: 1 });
 
       await service.delete(userId, accountId);
 
       expect(mockPrisma.account.delete).not.toHaveBeenCalled();
-      expect(mockPrisma.account.update).toHaveBeenCalledWith({
-        where: { id: accountId },
+      expect(mockPrisma.account.updateMany).toHaveBeenCalledWith({
+        where: { id: accountId, isActive: true, balance: 0 },
         data: { isActive: false },
       });
+    });
+  });
+
+  describe('close account', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+      mockPrisma.transaction.count.mockResolvedValue(0);
+      mockPrisma.accountMovement.count.mockResolvedValue(0);
+      mockPrisma.account.updateMany.mockResolvedValue({ count: 1 });
+    });
+
+    it.each([[1000], [-5], [0.0001]])('should reject closing an account with balance %s and write nothing', async (balance) => {
+      mockPrisma.account.findUnique.mockResolvedValue(buildAccount({ balance: new Decimal(balance) }));
+
+      await expect(service.delete(userId, accountId)).rejects.toThrow('Account balance must be 0 to close it');
+
+      expect(mockPrisma.account.delete).not.toHaveBeenCalled();
+      expect(mockPrisma.account.updateMany).not.toHaveBeenCalled();
+      expect(mockPrisma.accountMovement.create).not.toHaveBeenCalled();
+    });
+
+    it('should close an account with history at 0 and record a CLOSING', async () => {
+      mockPrisma.account.findUnique.mockResolvedValue(buildAccount({ balance: new Decimal(0), currency: 'USD' }));
+      mockPrisma.transaction.count.mockResolvedValue(2);
+
+      await service.delete(userId, accountId);
+
+      expect(mockPrisma.account.delete).not.toHaveBeenCalled();
+      expect(mockPrisma.account.updateMany).toHaveBeenCalledWith({
+        where: { id: accountId, isActive: true, balance: 0 },
+        data: { isActive: false },
+      });
+      const { data } = mockPrisma.accountMovement.create.mock.calls[0][0];
+      expect(data).toMatchObject({ userId, type: MovementType.CLOSING, accountId, currency: 'USD' });
+      expect(data.amount.isZero()).toBe(true);
+    });
+
+    it('should delete an account with no history without recording a CLOSING', async () => {
+      mockPrisma.account.findUnique.mockResolvedValue(buildAccount({ balance: new Decimal(0) }));
+
+      await service.delete(userId, accountId);
+
+      expect(mockPrisma.account.delete).toHaveBeenCalledWith({ where: { id: accountId } });
+      expect(mockPrisma.accountMovement.create).not.toHaveBeenCalled();
+    });
+
+    it('should do nothing when the account is already closed', async () => {
+      mockPrisma.account.findUnique.mockResolvedValue(buildAccount({ balance: new Decimal(0), isActive: false }));
+
+      await service.delete(userId, accountId);
+
+      expect(mockPrisma.account.delete).not.toHaveBeenCalled();
+      expect(mockPrisma.account.updateMany).not.toHaveBeenCalled();
+      expect(mockPrisma.accountMovement.create).not.toHaveBeenCalled();
+    });
+
+    it('should throw ConflictException without a CLOSING when the balance changed concurrently', async () => {
+      mockPrisma.account.findUnique.mockResolvedValue(buildAccount({ balance: new Decimal(0) }));
+      mockPrisma.accountMovement.count.mockResolvedValue(1);
+      mockPrisma.account.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(service.delete(userId, accountId)).rejects.toThrow(ConflictException);
+
+      expect(mockPrisma.accountMovement.create).not.toHaveBeenCalled();
+    });
+
+    it('should reject adjusting the balance of a closed account', async () => {
+      mockPrisma.account.findUnique.mockResolvedValue(buildAccount({ balance: new Decimal(0), isActive: false }));
+      mockPrisma.account.count.mockResolvedValueOnce(1);
+
+      await expect(service.adjust(userId, accountId, { balance: 10 })).rejects.toThrow('Account is inactive');
+
+      expect(mockPrisma.account.updateMany).not.toHaveBeenCalled();
     });
   });
 

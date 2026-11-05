@@ -24,6 +24,7 @@ export class DashboardService {
     const monthlyTransactions = await this.prisma.transaction.findMany({
       where: {
         accountId: { in: accountIds },
+        deletedAt: null,
         transactionDate: { gte: monthStart, lte: monthEnd },
       },
       select: { type: true, amount: true },
@@ -44,6 +45,7 @@ export class DashboardService {
     const unclassifiedCount = await this.prisma.transaction.count({
       where: {
         accountId: { in: accountIds },
+        deletedAt: null,
         status: 'UNCLASSIFIED',
       },
     });

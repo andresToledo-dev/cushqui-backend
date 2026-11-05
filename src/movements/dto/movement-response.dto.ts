@@ -16,13 +16,13 @@ export class MovementResponseDto {
   @ApiProperty({ enum: MovementType, example: MovementType.TRANSFER })
   type: MovementType;
 
-  @ApiProperty({ example: 30, description: 'OPENING/TRANSFER: positive. ADJUSTMENT: signed (+10 / -10)' })
+  @ApiProperty({ example: 30, description: 'OPENING/TRANSFER: positive. ADJUSTMENT: signed (+10 / -10). CLOSING: always 0' })
   amount: number;
 
   @ApiProperty({ example: 'EUR' })
   currency: string;
 
-  @ApiProperty({ type: MovementAccountDto, description: 'OPENING/ADJUSTMENT: the account. TRANSFER: source account' })
+  @ApiProperty({ type: MovementAccountDto, description: 'OPENING/ADJUSTMENT/CLOSING: the account. TRANSFER: source account' })
   account: MovementAccountDto;
 
   @ApiProperty({ type: MovementAccountDto, required: false, description: 'TRANSFER only: destination account' })

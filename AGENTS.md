@@ -24,7 +24,7 @@ npm run start:dev     # desarrollo con hot reload (BD dev)
 npm run build         # build de producción
 
 # Tests
-npm test              # tests unitarios (158 tests, sin BD)
+npm test              # tests unitarios (206 tests, sin BD)
 npm run test:e2e      # tests e2e (BD dev + seed; abortan si apuntan a prod)
 npm run test:cov      # coverage
 
@@ -54,6 +54,17 @@ movements/      # Historial de movimientos: aperturas, ajustes, transferencias
 health/         # Health check
 common/         # Guards, decorators, filters
 ```
+
+## Seguimiento por rama
+
+- Con cada requerimiento nuevo, comprueba la rama actual (`git branch --show-current`) y documenta en `docs/<rama>/Following.md`; crea la carpeta si no existe. `MEMORY.md` es global; `Following.md` solo cubre esa rama, hasta cerrarla
+- `docs/` es local: **nunca se versiona** (está en `.gitignore`)
+- `Following.md` es breve y fácil de seguir, no un relato largo:
+  - Funcionalidades que trata la rama, con una explicación corta
+  - Tareas ligadas a sus commits, p. ej. `T01: Add visibility account: archivos que cambiamos y lógica que implementamos`
+  - Cambios importantes, si los hay
+- Si un cambio altera una tarea anterior de la rama, actualiza esa tarea
+- **Commits**: cuando el usuario aprueba una tarea, va en un commit `TXX: comentario corto en inglés`. `XX` es el número de la tarea, con dos dígitos, y vuelve a `T01` en cada rama. Un cambio relacionado con una tarea ya hecha es una subtarea de ella: `T02-1`, `T02-2`…
 
 ## Memoria para el agente
 
@@ -98,6 +109,8 @@ common/         # Guards, decorators, filters
 - `transactions` contiene **solo INCOME y EXPENSE** (manuales + imports por notificación). Transferencias, aperturas y ajustes van en `account_movements`
 - `amount` se guarda como **DECIMAL(19,4) positivo**; el signo viene de `type` (EXPENSE = negativo, INCOME = positivo)
 - Clasificación: `POST /transactions/:id/classify` con `{ categoryId }`
+- **Convertir en transferencia**: `POST /transactions/:id/convert-to-transfer { otherAccountId | otherTransactionId, note? }`, solo `UNCLASSIFIED`. Aplica borrado lógico y guarda `convertedToMovementId` (el `ImportEvent` sigue detectando duplicados), y crea la `TRANSFER`. Con una transacción solo cambia el saldo de la otra cuenta; con las dos (`otherTransactionId`, tipo contrario y mismo importe) no cambia ninguno. Sin comprobar saldo suficiente: el banco ya hizo la operación. `GET /transactions/:id/transfer-candidates` propone contrapartes (±3 días); nunca se convierte automáticamente: dos importes iguales pueden ser casualidad
+- **Toda lectura de `transactions` debe filtrar `deletedAt: null`** (dashboard y statistics no lo hacían y contaban las borradas)
 
 ### Categorías
 
@@ -117,16 +130,22 @@ common/         # Guards, decorators, filters
 - Nunca leer-modificar-escribir el saldo: `adjustBalance` usa `increment` atómico de Prisma
 - **`PATCH /accounts/:id` no acepta `balance`**: el saldo solo cambia por transacciones o movimientos, para que todo cambio quede registrado
 
+### Visibilidad de cuentas
+
+- `visibleInList` (mostrar en la lista de cuentas) y `balanceVisible` (mostrar el saldo): booleanos, `true` por defecto, se cambian con `PATCH /accounts/:id`. Solo aceptan booleanos reales: `enableImplicitConversion` convierte cualquier texto no vacío en `true` (también `"false"`), por eso conservan el valor original con `@Transform`
+- Son preferencias de presentación que aplica el frontend: la API **no filtra ni oculta nada** por ellas. `GET /accounts` devuelve también las ocultas (para poder volver a mostrarlas), y dashboard y statistics siguen contándolas
+
 ### Movimientos de cuenta (`account_movements`, Crítico)
 
-- Una fila por evento, tipo `MovementType`: `OPENING`, `ADJUSTMENT`, `TRANSFER`. Se crean con `recordMovement(tx, data)` de `src/movements/movement.util.ts`
+- Una fila por evento, tipo `MovementType`: `OPENING`, `ADJUSTMENT`, `TRANSFER`, `CLOSING`. Se crean con `recordMovement(tx, data)` de `src/movements/movement.util.ts`
 - **OPENING**: al crear la cuenta, **siempre** (incluso con 0 €), `amount = balance` inicial. `openingDate` opcional (por defecto ahora) para cuentas históricas
 - `POST /accounts/:id/adjustments` acepta `date` opcional (por defecto ahora)
 - **ADJUSTMENT**: `POST /accounts/:id/adjustments { balance, note? }`. `amount` **con signo** (+10 / -10) = nuevo − actual, más `balanceBefore`/`balanceAfter`. Bloqueo optimista (`updateMany where balance = actual`) → 409 si cambió en paralelo. Delta 0 no registra nada
 - **TRANSFER**: una sola fila (`accountId` = origen, `toAccountId` = destino, `amount` positivo). Nunca dos filas ±
 - **Solo TRANSFER es editable** (`PATCH /transfers/:id`): revertir efecto viejo + aplicar nuevo + actualizar la misma fila, **sin registrar la edición**. OPENING y ADJUSTMENT son inmutables; no hay DELETE de movimientos
 - Historial: `GET /movements?accountId=&type=&from=&to=&page=&limit=`; el filtro `accountId` busca en origen **o** destino
-- Una cuenta con movimientos distintos de OPENING solo se puede desactivar (soft delete), no borrar
+- **Cerrar una cuenta** (`DELETE /accounts/:id`, única vía; `PATCH` no acepta `isActive`): saldo distinto de 0 → 409. Con transacciones o movimientos distintos de OPENING: queda inactiva y registra un **CLOSING** (`amount` 0), en el mismo `$transaction`. Sin historial: borrado real, sin CLOSING. Ya cerrada: 204 sin hacer nada. El cierre es definitivo
+- **Cuenta cerrada**: nada puede cambiar su saldo (`assertAccountsActive` de `src/accounts/account-balance.util.ts`, 400 `Account is inactive`): crear, borrar o editar importe, tipo o cuenta de transacciones y transferencias, ajustes e imports. Siguen permitidos clasificar y editar lo que no afecta al saldo. Cualquier operación nueva que cambie saldos debe llamarlo
 
 ## Ambientes y despliegue
 
@@ -161,11 +180,13 @@ Variables (ver `.env.example`): `DATABASE_URL`, `DIRECT_URL`, `JWT_SECRET`, `JWT
 
 | Tipo Test | Comando            | Notas                                               |
 | --------- | ------------------ | --------------------------------------------------- |
-| Unit      | `npm test`         | 158 tests, no requiere BD (los corre la CI en cada PR) |
+| Unit      | `npm test`         | 206 tests, no requiere BD (los corre la CI en cada PR) |
 | E2E       | `npm run test:e2e` | BD dev con seed; abortan si `DATABASE_URL` contiene `PROD_DB_REF` |
 | Coverage  | `npm run test:cov` | Salida en `coverage/`                               |
 
 **Los tests e2e crean datos reales** y dependen del usuario/cuentas del seed (`npm run prisma:seed` en dev antes de ejecutarlos; el usuario seed es ADMIN para crear invitaciones con `createInvitation()` de `test/shared-test.module.ts`). Para dejar la BD dev solo con tus datos: `npm run db:clean:dev:execute <tu email>` (borra el usuario seed y los creados por los tests).
+
+**Conexiones en los e2e**: cada suite levanta su propia app y su pool de Prisma, y el pooler de sesión de dev admite 15 clientes en total (compartidos con `start:dev`). Por eso corren como máximo 4 suites a la vez (`maxWorkers` en `test/jest-e2e.json`) y `test/jest.setup.ts` fija `connection_limit=2`. Si aparece `EMAXCONNSESSION` (500 al azar), revisar estos límites antes de buscar un fallo en el código.
 
 **Aislamiento en los e2e** (corren en paralelo): una suite que comprueba saldos crea **su propia cuenta** con `createTestAccount()` y la desactiva en `afterAll` con `deactivateAccounts()`; nunca usa las cuentas del seed (`revolut-account`…), porque otra suite podría cambiar el saldo entre la lectura y la comprobación. Las integraciones que crea las borra con `deleteIntegrations()`. Helpers en `test/shared-test.module.ts`
 
