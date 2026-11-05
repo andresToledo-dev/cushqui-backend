@@ -99,11 +99,15 @@ export async function createTestAccount(label: string, balance = 1000): Promise<
 }
 
 /**
- * Removes the accounts a suite created (call it in afterAll). Accounts with transactions or movements
- * other than OPENING can only be deactivated, so they stay inactive in the dev DB.
+ * Removes the accounts a suite created (call it in afterAll). Only an account at 0 can be closed, so it
+ * adjusts the balance first; that adjustment counts as history, so they stay inactive in the dev DB.
  */
 export async function deactivateAccounts(ids: (string | undefined)[]): Promise<void> {
   for (const id of ids.filter(Boolean)) {
+    await request(appInstance.getHttpServer())
+      .post(`/api/v1/accounts/${id}/adjustments`)
+      .set('Authorization', `Bearer ${getAccessToken()}`)
+      .send({ balance: 0 });
     await request(appInstance.getHttpServer())
       .delete(`/api/v1/accounts/${id}`)
       .set('Authorization', `Bearer ${getAccessToken()}`);

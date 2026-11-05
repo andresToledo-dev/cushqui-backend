@@ -22,7 +22,7 @@ export interface RecordMovementData {
 }
 
 /**
- * Records an OPENING / ADJUSTMENT / TRANSFER in account_movements.
+ * Records an OPENING / ADJUSTMENT / TRANSFER / CLOSING in account_movements.
  * Must run inside the same $transaction that changes accounts.balance.
  */
 export function recordMovement(tx: any, data: RecordMovementData) {

@@ -57,6 +57,17 @@ describe('DashboardService', () => {
       expect(result.unclassifiedCount).toBe(4);
     });
 
+    it('should ignore deleted transactions', async () => {
+      mockPrisma.account.findMany.mockResolvedValue([{ id: 'acc-1', balance: new Decimal(0) }]);
+      mockPrisma.transaction.findMany.mockResolvedValueOnce([]);
+      mockPrisma.transaction.count.mockResolvedValue(0);
+
+      await service.getDashboard(userId);
+
+      expect(mockPrisma.transaction.findMany.mock.calls[0][0].where.deletedAt).toBeNull();
+      expect(mockPrisma.transaction.count.mock.calls[0][0].where.deletedAt).toBeNull();
+    });
+
     it('should handle empty accounts', async () => {
       mockPrisma.account.findMany.mockResolvedValue([]);
       mockPrisma.transaction.findMany.mockResolvedValue([]);

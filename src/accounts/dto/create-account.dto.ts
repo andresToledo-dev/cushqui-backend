@@ -18,7 +18,8 @@ export class CreateAccountDto {
   @IsString()
   @MinLength(3)
   @MaxLength(3)
-  currency?: string = 'EUR';
+  // No default initializer: PartialType would inherit it and reset the currency on every PATCH
+  currency?: string;
 
   @ApiProperty({ example: 0, required: false })
   @IsOptional()

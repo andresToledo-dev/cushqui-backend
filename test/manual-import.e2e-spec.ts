@@ -1,6 +1,6 @@
 import { INestApplication } from "@nestjs/common";
 import * as request from "supertest";
-import { getSharedTestApp, getAccessToken, closeSharedTestApp, deleteIntegrations } from "./shared-test.module";
+import { getSharedTestApp, getAccessToken, closeSharedTestApp, deactivateAccounts, deleteIntegrations } from "./shared-test.module";
 
 describe("Manual Import Flow (e2e)", () => {
   let app: INestApplication;
@@ -34,12 +34,7 @@ describe("Manual Import Flow (e2e)", () => {
 
   afterAll(async () => {
     await deleteIntegrations(integrationIds);
-    // The account has transactions, so this only deactivates it
-    if (accountId) {
-      await request(app.getHttpServer())
-        .delete(`/api/v1/accounts/${accountId}`)
-        .set("Authorization", `Bearer ${accessToken}`);
-    }
+    await deactivateAccounts([accountId]);
     await closeSharedTestApp();
   });
 

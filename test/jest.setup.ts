@@ -13,6 +13,13 @@ if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL is not set. Configure .env with the development database before running e2e tests.");
 }
 
+// Each suite runs its own app (and Prisma pool). The dev session pooler accepts 15 clients in total,
+// shared with `start:dev`: 4 workers (jest-e2e.json) x 2 connections leaves room for it.
+const E2E_CONNECTION_LIMIT = "2";
+const databaseUrl = new URL(process.env.DATABASE_URL);
+databaseUrl.searchParams.set("connection_limit", E2E_CONNECTION_LIMIT);
+process.env.DATABASE_URL = databaseUrl.toString();
+
 // e2e tests create and modify data: never run them against the production database
 // (dev and prod share the Supabase pooler host; the project-ref in the URL tells them apart)
 const prodDbRef = process.env.PROD_DB_REF;

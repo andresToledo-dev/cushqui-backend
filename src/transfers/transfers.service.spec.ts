@@ -12,6 +12,7 @@ describe('TransfersService', () => {
     account: {
       findUnique: jest.fn(),
       update: jest.fn(),
+      count: jest.fn(),
     },
     accountMovement: {
       create: jest.fn(),
@@ -92,6 +93,15 @@ describe('TransfersService', () => {
       expect(result.movementId).toBe('movement-id');
     });
 
+    it('should reject a transfer that touches a closed account', async () => {
+      mockPrisma.account.count.mockResolvedValueOnce(1);
+
+      await expect(
+        service.create(userId, { fromAccountId: 'revolut', toAccountId: 'caixa', amount: 30, currency: 'EUR', date: '2026-10-13T10:00:00.000Z' }),
+      ).rejects.toThrow('Account is inactive');
+      expect(mockPrisma.accountMovement.create).not.toHaveBeenCalled();
+    });
+
     it('should reject a transfer to the same account', async () => {
       await expect(service.create(userId, { ...dto, toAccountId: 'revolut' })).rejects.toThrow(BadRequestException);
     });
@@ -160,6 +170,26 @@ describe('TransfersService', () => {
 
       await expect(service.update(userId, 'transfer-id', { amount: 20 })).rejects.toThrow(NotFoundException);
       expect(mockPrisma.account.update).not.toHaveBeenCalled();
+    });
+
+    it('should reject a balance change when one of the old or new accounts is closed', async () => {
+      mockPrisma.accountMovement.findUnique.mockResolvedValue(existingTransfer);
+      mockPrisma.account.count.mockResolvedValueOnce(1);
+
+      await expect(service.update(userId, 'transfer-id', { toAccountId: 'cash' })).rejects.toThrow('Account is inactive');
+
+      expect(mockPrisma.account.count).toHaveBeenCalledWith({
+        where: { id: { in: ['revolut', 'caixa', 'revolut', 'cash'] }, isActive: false },
+      });
+      expect(mockPrisma.account.update).not.toHaveBeenCalled();
+    });
+
+    it('should allow editing only the note when an account is closed', async () => {
+      mockPrisma.accountMovement.findUnique.mockResolvedValue(existingTransfer);
+
+      await service.update(userId, 'transfer-id', { note: 'Rent' });
+
+      expect(mockPrisma.account.count).not.toHaveBeenCalled();
     });
 
     it('should not allow editing another user transfer', async () => {
