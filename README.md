@@ -178,6 +178,8 @@ The first ADMIN is created from the command line: `npm run invite:admin:dev [ema
 | PATCH | `/api/v1/transactions/:id` | Update transaction |
 | DELETE | `/api/v1/transactions/:id` | Delete transaction |
 | POST | `/api/v1/transactions/:id/classify` | Classify transaction |
+| POST | `/api/v1/transactions/:id/convert-to-transfer` | Convert unclassified transaction to a transfer |
+| GET | `/api/v1/transactions/:id/transfer-candidates` | Possible other sides of a transfer |
 
 **Transaction Filters:**
 - `accountId` - Filter by account

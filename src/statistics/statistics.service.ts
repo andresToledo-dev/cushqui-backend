@@ -19,6 +19,7 @@ export class StatisticsService {
 
     const where: any = {
       accountId: { in: accountIds },
+      deletedAt: null,
       type: 'EXPENSE',
       categoryId: { not: null },
     };
@@ -67,6 +68,7 @@ export class StatisticsService {
 
     const where: any = {
       accountId: { in: accounts.map((a) => a.id) },
+      deletedAt: null,
     };
 
     if (query.from || query.to) {
@@ -130,6 +132,7 @@ export class StatisticsService {
       const transactions = await this.prisma.transaction.findMany({
         where: {
           accountId: { in: accountIds },
+          deletedAt: null,
           transactionDate: { gte: monthStart, lte: monthEnd },
         },
         select: { type: true, amount: true },

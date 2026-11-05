@@ -16,6 +16,8 @@ import { TransactionsService } from './transactions.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { UpdateTransactionDto } from './dto/update-transaction.dto';
 import { ClassifyTransactionDto } from './dto/classify-transaction.dto';
+import { ConvertToTransferDto } from './dto/convert-to-transfer.dto';
+import { MovementResponseDto } from '../movements/dto/movement-response.dto';
 import { TransactionQueryDto } from './dto/transaction-query.dto';
 import { TransactionResponseDto } from './dto/transaction-response.dto';
 import { PaginatedResponseDto } from './dto/paginated-response.dto';
@@ -96,5 +98,35 @@ export class TransactionsController {
     @Body() dto: ClassifyTransactionDto,
   ): Promise<TransactionResponseDto> {
     return this.transactionsService.classify(userId, id, dto);
+  }
+
+  @Post(':id/convert-to-transfer')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Convert an unclassified transaction, or both sides of one, to a transfer' })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiResponse({ status: 201, type: MovementResponseDto })
+  @ApiResponse({ status: 400, description: 'Invalid body, classified transaction, sides that do not match, currency mismatch or inactive account' })
+  @ApiResponse({ status: 404, description: 'Transaction or account not found' })
+  @ApiResponse({ status: 409, description: 'Transaction changed concurrently' })
+  async convertToTransfer(
+    @CurrentUser('id') userId: string,
+    @Param('id') id: string,
+    @Body() dto: ConvertToTransferDto,
+  ): Promise<MovementResponseDto> {
+    return this.transactionsService.convertToTransfer(userId, id, dto);
+  }
+
+  @Get(':id/transfer-candidates')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Transactions that could be the other side of this one (to propose them, not to convert automatically)' })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiResponse({ status: 200, type: [TransactionResponseDto] })
+  @ApiResponse({ status: 400, description: 'Classified transaction' })
+  @ApiResponse({ status: 404, description: 'Transaction not found' })
+  async findTransferCandidates(
+    @CurrentUser('id') userId: string,
+    @Param('id') id: string,
+  ): Promise<TransactionResponseDto[]> {
+    return this.transactionsService.findTransferCandidates(userId, id);
   }
 }

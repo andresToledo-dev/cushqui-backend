@@ -160,27 +160,30 @@ model Category {
 }
 
 model Transaction {
-  id              String            @id @default(uuid())
-  userId          String
-  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  accountId       String
-  account         Account           @relation("TransactionFromAccount", fields: [accountId], references: [id], onDelete: Cascade)
-  categoryId      String?
-  category        Category?         @relation("TransactionCategory", fields: [categoryId], references: [id], onDelete: SetNull)
-  subcategoryId   String?
-  subcategory     Category?         @relation("TransactionSubcategory", fields: [subcategoryId], references: [id], onDelete: SetNull)
-  amount          Decimal           @db.Decimal(19, 4)
-  currency        String            @default("EUR")
-  type            TransactionType
-  status          TransactionStatus @default(UNCLASSIFIED)
-  source          TransactionSource @default(MANUAL)
-  merchant        String?
-  description     String?
-  externalId      String?
-  transactionDate DateTime
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
-  deletedAt       DateTime?
+  id                    String            @id @default(uuid())
+  userId                String
+  user                  User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountId             String
+  account               Account           @relation("TransactionFromAccount", fields: [accountId], references: [id], onDelete: Cascade)
+  categoryId            String?
+  category              Category?         @relation("TransactionCategory", fields: [categoryId], references: [id], onDelete: SetNull)
+  subcategoryId         String?
+  subcategory           Category?         @relation("TransactionSubcategory", fields: [subcategoryId], references: [id], onDelete: SetNull)
+  amount                Decimal           @db.Decimal(19, 4)
+  currency              String            @default("EUR")
+  type                  TransactionType
+  status                TransactionStatus @default(UNCLASSIFIED)
+  source                TransactionSource @default(MANUAL)
+  merchant              String?
+  description           String?
+  externalId            String?
+  transactionDate       DateTime
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+  deletedAt             DateTime?
+  /// Set when the transaction was converted to a TRANSFER (it is also soft deleted).
+  convertedToMovementId String?
+  convertedToMovement   AccountMovement?  @relation(fields: [convertedToMovementId], references: [id], onDelete: SetNull)
 
   importEvents ImportEvent[]
 
@@ -193,33 +196,35 @@ model Transaction {
   @@index([type])
   @@index([source])
   @@index([deletedAt])
+  @@index([convertedToMovementId])
   @@map("transactions")
 }
 
 /// Account-level events that are not INCOME/EXPENSE: openings, manual adjustments and transfers.
 /// One row per event. Only TRANSFER rows are editable.
 model AccountMovement {
-  id            String       @id @default(uuid())
-  userId        String
-  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type          MovementType
+  id                    String        @id @default(uuid())
+  userId                String
+  user                  User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type                  MovementType
   /// OPENING/ADJUSTMENT/CLOSING: the account. TRANSFER: source account.
-  accountId     String
-  account       Account      @relation("MovementFromAccount", fields: [accountId], references: [id], onDelete: Cascade)
+  accountId             String
+  account               Account       @relation("MovementFromAccount", fields: [accountId], references: [id], onDelete: Cascade)
   /// TRANSFER only: destination account.
-  toAccountId   String?
-  toAccount     Account?     @relation("MovementToAccount", fields: [toAccountId], references: [id], onDelete: Cascade)
+  toAccountId           String?
+  toAccount             Account?      @relation("MovementToAccount", fields: [toAccountId], references: [id], onDelete: Cascade)
   /// OPENING/TRANSFER: positive. ADJUSTMENT: signed (+10 / -10). CLOSING: always 0.
-  amount        Decimal      @db.Decimal(19, 4)
+  amount                Decimal       @db.Decimal(19, 4)
   /// ADJUSTMENT only.
-  balanceBefore Decimal?     @db.Decimal(19, 4)
+  balanceBefore         Decimal?      @db.Decimal(19, 4)
   /// ADJUSTMENT only.
-  balanceAfter  Decimal?     @db.Decimal(19, 4)
-  currency      String       @default("EUR")
-  note          String?
-  movementDate  DateTime
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+  balanceAfter          Decimal?      @db.Decimal(19, 4)
+  currency              String        @default("EUR")
+  note                  String?
+  movementDate          DateTime
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+  convertedTransactions Transaction[]
 
   @@index([userId])
   @@index([accountId])

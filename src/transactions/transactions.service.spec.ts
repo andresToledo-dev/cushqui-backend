@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { NotFoundException, ForbiddenException, BadRequestException, ConflictException } from '@nestjs/common';
 import { TransactionsService } from './transactions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
@@ -17,10 +17,15 @@ describe('TransactionsService', () => {
     transaction: {
       create: jest.fn(),
       update: jest.fn(),
+      updateMany: jest.fn(),
     },
     account: {
       findUnique: jest.fn(),
       update: jest.fn(),
+    },
+    accountMovement: {
+      create: jest.fn(),
+      findUnique: jest.fn(),
     },
   };
 
@@ -407,6 +412,217 @@ describe('TransactionsService', () => {
 
       expect(mockPrisma.account.count).not.toHaveBeenCalled();
       expect(mockTx.account.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('convertToTransfer', () => {
+    const date = new Date('2026-11-01T10:00:00.000Z');
+    const otherAccountId = 'other-account';
+    const buildConvertible = (overrides: Record<string, unknown> = {}) => ({
+      id: transactionId,
+      userId,
+      accountId,
+      amount: new Decimal(500),
+      currency: 'EUR',
+      type: TransactionType.EXPENSE,
+      status: TransactionStatus.UNCLASSIFIED,
+      merchant: 'Juan',
+      transactionDate: date,
+      deletedAt: null,
+      ...overrides,
+    });
+    const income = buildConvertible({ id: 'income-id', accountId: otherAccountId, type: TransactionType.INCOME, merchant: null, transactionDate: new Date('2026-11-01T11:00:00.000Z') });
+    const mockTransactions = (...rows: Record<string, unknown>[]) =>
+      mockPrisma.transaction.findUnique.mockImplementation(({ where }: any) => Promise.resolve(rows.find((row) => row.id === where.id) ?? null));
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      mockPrisma.account.count.mockReset();
+      mockPrisma.account.count.mockResolvedValue(0);
+      mockPrisma.account.findUnique.mockResolvedValue({ id: otherAccountId, userId, currency: 'EUR' });
+      mockTx.accountMovement.create.mockResolvedValue({ id: 'movement-id' });
+      mockTx.transaction.updateMany.mockImplementation(({ where }: any) => Promise.resolve({ count: where.id.in.length }));
+      mockTx.accountMovement.findUnique.mockResolvedValue({
+        id: 'movement-id',
+        type: 'TRANSFER',
+        amount: new Decimal(500),
+        currency: 'EUR',
+        balanceBefore: null,
+        balanceAfter: null,
+        note: 'Juan',
+        movementDate: date,
+        createdAt: date,
+        updatedAt: date,
+        account: { id: accountId, name: 'A' },
+        toAccount: { id: otherAccountId, name: 'B' },
+      });
+    });
+
+    it('should turn an expense into a transfer and change only the other account (A 500, B 200 → 700)', async () => {
+      mockTransactions(buildConvertible());
+
+      const result = await service.convertToTransfer(userId, transactionId, { otherAccountId });
+
+      expect(mockTx.accountMovement.create.mock.calls[0][0].data).toMatchObject({
+        type: 'TRANSFER',
+        accountId,
+        toAccountId: otherAccountId,
+        note: 'Juan',
+        movementDate: date,
+      });
+      expect(mockTx.transaction.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: [transactionId] }, deletedAt: null, status: TransactionStatus.UNCLASSIFIED },
+        data: { deletedAt: expect.any(Date), convertedToMovementId: 'movement-id' },
+      });
+      expect(mockTx.account.update).toHaveBeenCalledTimes(1);
+      expectBalanceIncrement(otherAccountId, 500);
+      expect(result.id).toBe('movement-id');
+    });
+
+    it('should turn an income into a transfer from the other account, which goes down', async () => {
+      mockTransactions(buildConvertible({ type: TransactionType.INCOME }));
+
+      await service.convertToTransfer(userId, transactionId, { otherAccountId });
+
+      expect(mockTx.accountMovement.create.mock.calls[0][0].data).toMatchObject({ accountId: otherAccountId, toAccountId: accountId });
+      expect(mockTx.account.update).toHaveBeenCalledTimes(1);
+      expectBalanceIncrement(otherAccountId, -500);
+    });
+
+    it.each([
+      ['the expense', transactionId, 'income-id'],
+      ['the income', 'income-id', transactionId],
+    ])('should convert both sides from %s without changing any balance', async (_label, id, otherTransactionId) => {
+      mockTransactions(buildConvertible(), income);
+
+      await service.convertToTransfer(userId, id, { otherTransactionId });
+
+      expect(mockTx.accountMovement.create.mock.calls[0][0].data).toMatchObject({
+        accountId,
+        toAccountId: otherAccountId,
+        note: 'Juan',
+        movementDate: date,
+      });
+      expect(mockTx.transaction.updateMany.mock.calls[0][0].where.id.in).toEqual(expect.arrayContaining([transactionId, 'income-id']));
+      expect(mockTx.account.update).not.toHaveBeenCalled();
+    });
+
+    it('should use the note it receives', async () => {
+      mockTransactions(buildConvertible());
+
+      await service.convertToTransfer(userId, transactionId, { otherAccountId, note: 'Savings' });
+
+      expect(mockTx.accountMovement.create.mock.calls[0][0].data.note).toBe('Savings');
+    });
+
+    it.each([
+      ['neither identifier', {}],
+      ['both identifiers', { otherAccountId, otherTransactionId: 'income-id' }],
+    ])('should reject %s', async (_label, dto) => {
+      await expect(service.convertToTransfer(userId, transactionId, dto)).rejects.toThrow('Send exactly one of');
+    });
+
+    it.each([
+      ['deleted', { deletedAt: new Date() }],
+      ['of another user', { userId: 'other-user' }],
+    ])('should return 404 for a transaction that is %s', async (_label, overrides) => {
+      mockTransactions(buildConvertible(overrides));
+
+      await expect(service.convertToTransfer(userId, transactionId, { otherAccountId })).rejects.toThrow(NotFoundException);
+    });
+
+    it('should reject a classified transaction', async () => {
+      mockTransactions(buildConvertible({ status: TransactionStatus.CLASSIFIED }));
+
+      await expect(service.convertToTransfer(userId, transactionId, { otherAccountId })).rejects.toThrow('Only unclassified');
+    });
+
+    it('should reject a classified other side', async () => {
+      mockTransactions(buildConvertible(), { ...income, status: TransactionStatus.CLASSIFIED });
+
+      await expect(service.convertToTransfer(userId, transactionId, { otherTransactionId: 'income-id' })).rejects.toThrow('Only unclassified');
+    });
+
+    it.each([
+      ['the same type', { type: TransactionType.EXPENSE }],
+      ['another amount', { amount: new Decimal(499) }],
+    ])('should reject another side with %s', async (_label, overrides) => {
+      mockTransactions(buildConvertible(), { ...income, ...overrides });
+
+      await expect(service.convertToTransfer(userId, transactionId, { otherTransactionId: 'income-id' })).rejects.toThrow(BadRequestException);
+    });
+
+    it('should reject the same account', async () => {
+      mockTransactions(buildConvertible());
+
+      await expect(service.convertToTransfer(userId, transactionId, { otherAccountId: accountId })).rejects.toThrow('same account');
+    });
+
+    it('should return 404 for an account of another user', async () => {
+      mockTransactions(buildConvertible());
+      mockPrisma.account.findUnique.mockResolvedValue({ id: otherAccountId, userId: 'other-user', currency: 'EUR' });
+
+      await expect(service.convertToTransfer(userId, transactionId, { otherAccountId })).rejects.toThrow(NotFoundException);
+    });
+
+    it('should reject another currency', async () => {
+      mockTransactions(buildConvertible());
+      mockPrisma.account.findUnique.mockResolvedValue({ id: otherAccountId, userId, currency: 'USD' });
+
+      await expect(service.convertToTransfer(userId, transactionId, { otherAccountId })).rejects.toThrow('Currency mismatch');
+    });
+
+    it('should reject a closed account', async () => {
+      mockTransactions(buildConvertible());
+      mockPrisma.account.count.mockResolvedValue(1);
+
+      await expect(service.convertToTransfer(userId, transactionId, { otherAccountId })).rejects.toThrow('Account is inactive');
+      expect(mockTx.accountMovement.create).not.toHaveBeenCalled();
+    });
+
+    it('should fail without changing balances when it was converted concurrently', async () => {
+      mockTransactions(buildConvertible());
+      mockTx.transaction.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(service.convertToTransfer(userId, transactionId, { otherAccountId })).rejects.toThrow(ConflictException);
+      expect(mockTx.account.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('findTransferCandidates', () => {
+    const date = new Date('2026-11-10T12:00:00.000Z');
+
+    it('should search the opposite type, same amount and other active accounts, closest first', async () => {
+      mockPrisma.transaction.findUnique.mockResolvedValue({
+        id: transactionId,
+        userId,
+        accountId,
+        amount: new Decimal(500),
+        currency: 'EUR',
+        type: TransactionType.EXPENSE,
+        status: TransactionStatus.UNCLASSIFIED,
+        transactionDate: date,
+        deletedAt: null,
+      });
+      mockPrisma.transaction.findMany.mockResolvedValue([
+        buildFullTransaction({ id: 'far', transactionDate: new Date('2026-11-12T12:00:00.000Z') }),
+        buildFullTransaction({ id: 'near', transactionDate: new Date('2026-11-10T13:00:00.000Z') }),
+      ]);
+
+      const result = await service.findTransferCandidates(userId, transactionId);
+
+      expect(mockPrisma.transaction.findMany.mock.calls[0][0].where).toMatchObject({
+        userId,
+        deletedAt: null,
+        status: TransactionStatus.UNCLASSIFIED,
+        type: TransactionType.INCOME,
+        amount: new Decimal(500),
+        currency: 'EUR',
+        accountId: { not: accountId },
+        account: { isActive: true },
+        transactionDate: { gte: new Date('2026-11-07T12:00:00.000Z'), lte: new Date('2026-11-13T12:00:00.000Z') },
+      });
+      expect(result.map((candidate) => candidate.id)).toEqual(['near', 'far']);
     });
   });
 
