@@ -8,6 +8,7 @@ import { Decimal } from '@prisma/client/runtime/library';
 import * as crypto from 'crypto';
 import { adjustBalance, assertAccountsActive, balanceDelta } from '../accounts/account-balance.util';
 import { classifyMessage } from '../integrations/notification-words.util';
+import { extractAmount } from './notification-amount.util';
 
 /** Words of the NOTIFICATION integration that classify a message as expense / income. */
 export type NotificationWords = { expenseWords: string | null; incomeWords: string | null };
@@ -285,9 +286,8 @@ export class ImportsService {
     message: string,
     words: NotificationWords,
   ): { amount: number | null; finalDecision: FinalDecision; merchant: string } {
-    // Extract amount - number before € symbol
-    const amountMatch = message.match(/(\d+[.,]?\d*)\s*€/);
-    const amount = amountMatch ? parseFloat(amountMatch[1].replace(',', '.')) : null;
+    // Amount next to € or EUR, before or after it: "1.190 €" is 1190, "€13.05" is 13.05
+    const amount = extractAmount(message);
 
     // Expense or income by the integration's words; words of both lists (or none) → NA
     const finalDecision = classifyMessage(message, words.expenseWords, words.incomeWords);

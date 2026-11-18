@@ -1,11 +1,12 @@
 # MEMORY.md - Cushqui Backend
 
 ## Estado actual
-- **Tests**: unitarios 206/206 ✅ · e2e 107/107 ✅ (2026-11-05). En dev conviven `test@roto.com` y el seed `test@cushqui.local` (ADMIN) + usuarios de e2e
+- **Tests**: unitarios 231/231 ✅ · e2e 107/107 ✅ (2026-11-18). En dev conviven `test@roto.com` y el seed `test@cushqui.local` (ADMIN) + usuarios de e2e
 - Repo en GitHub (`main` producción en Vercel región `dub1`, `dev` por defecto). Producción: `https://cushqui-backend.vercel.app`
 - Importación Excel en dev completada (`test@roto.com`, luego con datos de prueba). **Carga en producción** (`--prod`, fusionado en `main`): pendiente de que el usuario se registre en la app y lance `npm run import:prod:execute` (~40 min estimados). Tras fusionar la rama de invitaciones, antes: `npm run invite:admin:prod <email>` y registrarse con ese código
 - Fusionados en `dev`/`main`: invitaciones, `NOTIFICATION`, token de integración SHA256, e2e con cuentas propias, `expenseWords`/`incomeWords` por integración NOTIFICATION (obligatorias; ambas listas → N/A). Frontend: pedir y editar las dos listas
-- **Rama actual `feature/interface-chages`**: seguimiento en `docs/feature/interface-chages/Following.md` (local). Migraciones `…_account_visibility`, `…_movement_closing` y `…_transaction_converted_to_movement` aplicadas en dev. En prod se aplican al desplegar. Frontend: leer y editar `visibleInList` y `balanceVisible`; mostrar `CLOSING` (hoy lo pintaría como "Apertura"); botón "Es una transferencia"
+- `feature/interface-chages` fusionada en `dev` y `main` (PR #23, #24): visibilidad de cuentas, `CLOSING`, convertir en transferencia. Frontend: leer y editar `visibleInList`/`balanceVisible`; mostrar `CLOSING`; botón "Es una transferencia"
+- **Rama actual `fix/import-events-numbers`**: importe de notificación con miles y símbolo delante. Seguimiento en `docs/fix/import-events-numbers/Following.md`
 - Pendiente: decidir la estrategia de e2e (propuesta: BD de test aparte + usuario propio por suite)
 - `Task1.md` eliminado del historial; quedan `refs/original` locales y copia en `%TEMP%\cushqui-history-backup-20261014-191722\` (limpieza pendiente, ofrecida)
 
@@ -32,6 +33,7 @@
 | Editar transacción: se valida el resultado final (tipo + categoría) y el saldo se revierte y reaplica | Pedido del usuario: gasto 20 → ingreso 20 lleva el saldo de 60 a 100. |
 | Cerrar cuenta solo con saldo 0 y `CLOSING`; sin historial, borrado real; cierre definitivo (`isActive` fuera de `PATCH`) | Elegido por el usuario. Una cuenta cerrada no admite cambios de saldo, para que siga en 0. Sin relleno: las inactivas antiguas no tienen `CLOSING` y conservan su saldo. |
 | Convertir transacción en `TRANSFER` por acción explícita (`convert-to-transfer`), con una o las dos notificaciones | Elegido por el usuario. Automático daría falsos positivos; una categoría seguiría contando como gasto. Sin deshacer: los movimientos no se borran. |
+| Importe de notificación: el último separador decide (1–2 cifras decimales, 3+ miles); `€`/`EUR` antes o después | Revolut envió `1.190 €` y se guardó 1.19. Las palabras del usuario clasifican; el importe debe salir de cualquier formato. `DECIMAL(19,4)` se mantiene (redondeo solo al mostrar). |
 | Historial por rama en `docs/<rama>/Following.md` (sin versionar) y commits `TXX` al aprobar cada tarea | Pedido del usuario: `MEMORY.md` es global; `Following.md` guía los cambios de una rama hasta cerrarla. Regla en `AGENTS.md`. |
 
 ## Errores a evitar
