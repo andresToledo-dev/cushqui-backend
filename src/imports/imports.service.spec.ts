@@ -237,6 +237,20 @@ describe('ImportsService', () => {
       });
 
       it.each([
+        ['a thousands separator (Revolut)', defaultWords, 'Transferencia realizada ✅\nHas enviado 1.190 € a Produtividade Crescente Imobiliaria. Llegará en segundos', 1190],
+        ['the symbol before the amount', { expenseWords: 'compra', incomeWords: 'recibido' }, 'Compra de €13.05 confirmada, CONTINENTE', 13.05],
+      ])('should create the expense with the full amount for %s', async (_label, words, message, amount) => {
+        const result = await service.importFromNotification(userId, integrationId, accountId, words, { message, date });
+
+        expect(result.created).toBe(true);
+        expect(mockTx.transaction.create.mock.calls[0][0].data).toMatchObject({ type: TransactionType.EXPENSE, amount: new Decimal(amount) });
+        expect(mockTx.account.update).toHaveBeenCalledWith({
+          where: { id: accountId },
+          data: { balance: { increment: new Decimal(-amount) } },
+        });
+      });
+
+      it.each([
         ['words of both lists', 'Pagaste 10 € y te han enviado 10 €'],
         ['none of the words (the old hardcoded ones no longer apply)', 'Has gastado 10 € en Bar'],
       ])('should record N/A without a transaction for %s', async (_label, message) => {
